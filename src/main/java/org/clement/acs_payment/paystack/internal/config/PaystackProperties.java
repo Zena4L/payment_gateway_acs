@@ -1,4 +1,4 @@
-package org.clement.acs_payment.paystack.internal;
+package org.clement.acs_payment.paystack.internal.config;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

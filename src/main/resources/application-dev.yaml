@@ -13,6 +13,8 @@ spring:
 acs:
   paystack:
     secret-key: ${ACS_PAYSTACK_SECRET_KEY:}
+  security:
+    bootstrap-admin-key: ${ACS_SECURITY_BOOTSTRAP_ADMIN_KEY:}
 
 logging:
   level:

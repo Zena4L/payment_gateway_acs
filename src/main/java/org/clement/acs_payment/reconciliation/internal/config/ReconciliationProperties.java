@@ -1,4 +1,4 @@
-package org.clement.acs_payment.reconciliation.internal;
+package org.clement.acs_payment.reconciliation.internal.config;
 
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;

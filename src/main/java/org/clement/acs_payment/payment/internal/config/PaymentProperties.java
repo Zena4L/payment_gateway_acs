@@ -1,4 +1,4 @@
-package org.clement.acs_payment.payment.internal;
+package org.clement.acs_payment.payment.internal.config;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Pattern;
