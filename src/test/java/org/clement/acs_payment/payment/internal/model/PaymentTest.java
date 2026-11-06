@@ -134,6 +134,81 @@ class PaymentTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUIRES_REVIEW);
     }
 
+    @Test
+    void storesEmailNormalised() {
+        var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
+
+        var payment = Payment.initialize("PAY-2", "client-a", "  Jane@Example.COM ", money, CREATED_CLOCK);
+
+        assertThat(payment.getEmail()).isEqualTo("jane@example.com");
+    }
+
+    @Test
+    void matchesIdenticalRequestIgnoringEmailCaseAndAmountScale() {
+        var payment = newPayment();
+
+        assertThat(payment.matches("client-a", "JANE@example.com", new Money(new BigDecimal("150"), Currency.getInstance("GHS")))).isTrue();
+    }
+
+    @Test
+    void doesNotMatchDifferentAmountEmailOrOwner() {
+        var payment = newPayment();
+        var sameMoney = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
+
+        assertThat(payment.matches("client-a", "jane@example.com", new Money(new BigDecimal("150.01"), Currency.getInstance("GHS")))).isFalse();
+        assertThat(payment.matches("client-a", "john@example.com", sameMoney)).isFalse();
+        assertThat(payment.matches("client-b", "jane@example.com", sameMoney)).isFalse();
+    }
+
+    @Test
+    void doesNotMatchDifferentCurrency() {
+        var payment = newPayment();
+
+        assertThat(payment.matches("client-a", "jane@example.com", new Money(new BigDecimal("150.00"), Currency.getInstance("USD")))).isFalse();
+    }
+
+    @Test
+    void storesCheckoutDetailsWhenInitialized() {
+        var payment = newPayment();
+
+        var result = payment.markInitialized("https://checkout.paystack.com/abc", "abc", LATER_CLOCK);
+
+        assertThat(result).isEqualTo(TransitionResult.APPLIED);
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
+        assertThat(payment.getAuthorizationUrl()).isEqualTo("https://checkout.paystack.com/abc");
+        assertThat(payment.getAccessCode()).isEqualTo("abc");
+    }
+
+    @Test
+    void ignoresCheckoutDetailsWhenTransitionIsRejected() {
+        var payment = pendingPayment();
+        payment.markFailed("declined", TransitionTrigger.VERIFY, LATER_CLOCK);
+
+        var result = payment.markInitialized("https://checkout.paystack.com/late", "late", LATER_CLOCK);
+
+        assertThat(result).isEqualTo(TransitionResult.REJECTED);
+        assertThat(payment.getAuthorizationUrl()).isNull();
+    }
+
+    @Test
+    void recordsFailureReasonTruncated() {
+        var payment = newPayment();
+
+        payment.markFailed("x".repeat(300), TransitionTrigger.INITIATE, LATER_CLOCK);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(payment.getGatewayResponse()).hasSize(255);
+    }
+
+    @Test
+    void marksAmbiguousInitializationAsUnknown() {
+        var payment = newPayment();
+
+        payment.markOutcomeUnknown(LATER_CLOCK);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
+    }
+
     private static Payment newPayment() {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
         return Payment.initialize("PAY-1", "client-a", "jane@example.com", money, CREATED_CLOCK);

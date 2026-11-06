@@ -1,4 +1,4 @@
-@ApplicationModule(allowedDependencies = {"paystack", "shared"})
+@ApplicationModule(allowedDependencies = {"paystack", "security", "shared"})
 @NullMarked
 package org.clement.acs_payment.payment;
 

@@ -1,5 +1,7 @@
 acs:
   paystack:
     secret-key: sk_test_dummy
+    retry:
+      initial-backoff: 10ms
   security:
     bootstrap-admin-key: acs_554558ae6ffc.2xU4YpXa_1vS_V_r8VpI593HlrfP5d_gdRpxjlf3lj8
