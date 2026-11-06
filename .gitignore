@@ -33,6 +33,7 @@ build/
 .vscode/
 /docs/*
 !/docs/user-stories.md
+!/docs/api-test-sequence.md
 
 ### Environment ###
 .env
