@@ -1,0 +1,52 @@
+### No API key
+GET {{baseUrl}}/api/v1/payments
+
+> {%
+    client.test("unauthorized", () => client.assert(response.status === 401, "expected 401"));
+%}
+
+### Invalid initiate body
+POST {{baseUrl}}/api/v1/payments/initiate
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "reference": "bad ref!",
+  "email": "not-an-email",
+  "amount": 150.005,
+  "currency": "GHS"
+}
+
+> {%
+    client.test("validation failed", () => client.assert(response.status === 400, "expected 400"));
+%}
+
+### Client key on an admin route
+POST {{baseUrl}}/api/v1/admin/api-keys
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "ownerId": "x",
+  "role": "ADMIN"
+}
+
+> {%
+    client.test("forbidden", () => client.assert(response.status === 403, "expected 403"));
+%}
+
+### Page size over the cap
+GET {{baseUrl}}/api/v1/payments?size=500
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("rejected", () => client.assert(response.status === 400, "expected 400"));
+%}
+
+### Inverted date range
+GET {{baseUrl}}/api/v1/payments?createdFrom=2026-11-03T00:00:00Z&createdTo=2026-11-01T00:00:00Z
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("invalid range", () => client.assert(response.status === 400, "expected 400"));
+%}

@@ -36,3 +36,6 @@ build/
 ### Environment ###
 .env
 Senior_Java_Spring_Boot_Payment_Assessment_Final.pdf
+
+### HTTP Client private environment ###
+http/http-client.private.env.json

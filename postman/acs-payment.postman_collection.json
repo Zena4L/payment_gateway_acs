@@ -1,0 +1,1095 @@
+{
+  "info": {
+    "name": "ACS Payment",
+    "description": "Payment gateway API (Paystack sandbox). Run the folders in order: each one saves variables the next uses. Set adminKey and paystackSecret in the environment first.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "clientKey",
+      "value": ""
+    },
+    {
+      "key": "keyId",
+      "value": ""
+    },
+    {
+      "key": "throwawayKey",
+      "value": ""
+    },
+    {
+      "key": "throwawayKeyId",
+      "value": ""
+    },
+    {
+      "key": "reference",
+      "value": ""
+    },
+    {
+      "key": "authorizationUrl",
+      "value": ""
+    },
+    {
+      "key": "transactionId",
+      "value": ""
+    },
+    {
+      "key": "webhookBody",
+      "value": ""
+    },
+    {
+      "key": "webhookSignature",
+      "value": ""
+    },
+    {
+      "key": "otherWebhookBody",
+      "value": ""
+    },
+    {
+      "key": "otherWebhookSignature",
+      "value": ""
+    },
+    {
+      "key": "reviewReference",
+      "value": ""
+    },
+    {
+      "key": "reviewWebhookBody",
+      "value": ""
+    },
+    {
+      "key": "reviewWebhookSignature",
+      "value": ""
+    },
+    {
+      "key": "reviewTransactionId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0 Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is UP', () => pm.expect(pm.response.json().status).to.eql('UP'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 API keys (admin)",
+      "item": [
+        {
+          "name": "Issue client key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/api-keys",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerId\": \"postman-{{$timestamp}}\",\n  \"role\": \"CLIENT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const issued = pm.response.json();",
+                  "pm.test('returns the key once', () => pm.expect(issued.apiKey).to.match(/^acs_[0-9a-f]{12}\\./));",
+                  "pm.collectionVariables.set('clientKey', issued.apiKey);",
+                  "pm.collectionVariables.set('keyId', issued.keyId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue throwaway key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/api-keys",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerId\": \"postman-throwaway\",\n  \"role\": \"CLIENT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('throwawayKey', pm.response.json().apiKey);",
+                  "pm.collectionVariables.set('throwawayKeyId', pm.response.json().keyId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke throwaway key",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/api-keys/{{throwawayKeyId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoked key is rejected",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{throwawayKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('problem code', () => pm.expect(pm.response.json().code).to.eql('unauthorized'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 Payments",
+      "item": [
+        {
+          "name": "Initiate payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('reference', 'PM-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
+                  "const payment = pm.response.json();",
+                  "pm.test('pending with a checkout link', () => {",
+                  "    pm.expect(payment.success).to.eql(true);",
+                  "    pm.expect(payment.status).to.eql('PENDING');",
+                  "    pm.expect(payment.authorizationUrl).to.match(/^https:\\/\\/checkout\\.paystack\\.com\\//);",
+                  "});",
+                  "pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay identical request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('same checkout link', () => pm.expect(pm.response.json().authorizationUrl).to.eql(pm.collectionVariables.get('authorizationUrl')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reuse reference with different amount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 200.00,\n  \"currency\": \"GHS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('conflict code', () => pm.expect(pm.response.json().code).to.eql('payment-conflict'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify payment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/verify/{{reference}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('reference echoed', () => pm.expect(pm.response.json().reference).to.eql(pm.collectionVariables.get('reference')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List payments (newest first)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments?page=0&size=5&sort=createdAt&direction=desc"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const page = pm.response.json();",
+                  "pm.test('page envelope', () => {",
+                  "    pm.expect(page).to.have.property('totalElements');",
+                  "    pm.expect(page.size).to.eql(5);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List filtered by reference and status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments?reference={{reference}}&status=PENDING"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const page = pm.response.json();",
+                  "pm.test('finds exactly this payment', () => pm.expect(page.totalElements).to.eql(1));",
+                  "pm.collectionVariables.set('transactionId', page.content[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get payment by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/{{transactionId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('no internal fields', () => pm.expect(pm.response.json()).to.not.have.property('gatewayResponse'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get unknown payment",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/00000000-0000-7000-8000-000000000000"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 Webhooks",
+      "item": [
+        {
+          "name": "charge.success (signed)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "{{webhookSignature}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/webhooks/paystack",
+            "body": {
+              "mode": "raw",
+              "raw": "{{webhookBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = {",
+                  "    event: 'charge.success',",
+                  "    data: { id: Date.now(), status: 'success', reference: pm.collectionVariables.get('reference'), amount: 15000, currency: 'GHS' }",
+                  "};",
+                  "const body = JSON.stringify(payload);",
+                  "pm.collectionVariables.set('webhookBody', body);",
+                  "pm.collectionVariables.set('webhookSignature', CryptoJS.HmacSHA512(body, pm.environment.get('paystackSecret')).toString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same event again (duplicate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "{{webhookSignature}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/webhooks/paystack",
+            "body": {
+              "mode": "raw",
+              "raw": "{{webhookBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid signature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/webhooks/paystack",
+            "body": {
+              "mode": "raw",
+              "raw": "{{webhookBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('signature code', () => pm.expect(pm.response.json().code).to.eql('invalid-signature'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unhandled event type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "{{otherWebhookSignature}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/webhooks/paystack",
+            "body": {
+              "mode": "raw",
+              "raw": "{{otherWebhookBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = { event: 'transfer.success', data: { id: Date.now(), reference: 'TRF-' + Date.now(), amount: 100, currency: 'GHS' } };",
+                  "const body = JSON.stringify(payload);",
+                  "pm.collectionVariables.set('otherWebhookBody', body);",
+                  "pm.collectionVariables.set('otherWebhookSignature', CryptoJS.HmacSHA512(body, pm.environment.get('paystackSecret')).toString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 Admin review",
+      "item": [
+        {
+          "name": "Initiate payment to review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"{{reviewReference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('reviewReference', 'PM-REVIEW-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Webhook with wrong amount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-paystack-signature",
+                "value": "{{reviewWebhookSignature}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/webhooks/paystack",
+            "body": {
+              "mode": "raw",
+              "raw": "{{reviewWebhookBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const payload = {",
+                  "    event: 'charge.success',",
+                  "    data: { id: Date.now(), status: 'success', reference: pm.collectionVariables.get('reviewReference'), amount: 1500, currency: 'GHS' }",
+                  "};",
+                  "const body = JSON.stringify(payload);",
+                  "pm.collectionVariables.set('reviewWebhookBody', body);",
+                  "pm.collectionVariables.set('reviewWebhookSignature', CryptoJS.HmacSHA512(body, pm.environment.get('paystackSecret')).toString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Review queue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments?status=REQUIRES_REVIEW&reference={{reviewReference}}"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "setTimeout(() => {}, 3000);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const page = pm.response.json();",
+                  "pm.test('payment is waiting for review', () => pm.expect(page.totalElements).to.eql(1));",
+                  "pm.collectionVariables.set('reviewTransactionId', page.content[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Audit trail before decision",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/transitions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const steps = pm.response.json();",
+                  "pm.test('last step is the review', () => pm.expect(steps[steps.length - 1].to).to.eql('REQUIRES_REVIEW'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resolve as FAILED",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/resolution",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"FAILED\",\n  \"reason\": \"Amount mismatch confirmed with Paystack support\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('now failed', () => pm.expect(pm.response.json().status).to.eql('FAILED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resolve again",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/resolution",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"outcome\": \"SUCCESS\",\n  \"reason\": \"Second attempt\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "pm.test('invalid transition', () => pm.expect(pm.response.json().code).to.eql('invalid-transition'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Audit trail after decision",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{adminKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/transitions"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
+                  "const last = pm.response.json().slice(-1)[0];",
+                  "pm.test('admin step recorded with who and why', () => {",
+                  "    pm.expect(last.trigger).to.eql('ADMIN');",
+                  "    pm.expect(last.actor).to.be.a('string').and.not.empty;",
+                  "    pm.expect(last.reason).to.eql('Amount mismatch confirmed with Paystack support');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 Errors",
+      "item": [
+        {
+          "name": "No API key",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/v1/payments"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 401', () => pm.response.to.have.status(401));",
+                  "pm.test('problem detail', () => pm.expect(pm.response.json()).to.include.keys('code', 'correlationId', 'timestamp'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid initiate body",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"bad ref!\",\n  \"email\": \"not-an-email\",\n  \"amount\": 150.005,\n  \"currency\": \"GHS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('field errors', () => pm.expect(pm.response.json().errors).to.be.an('array').that.is.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Client key on admin route",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/admin/api-keys",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerId\": \"x\",\n  \"role\": \"ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Page size over the cap",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments?size=500"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Inverted date range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments?createdFrom=2026-11-03T00:00:00Z&createdTo=2026-11-01T00:00:00Z"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('range code', () => pm.expect(pm.response.json().code).to.eql('invalid-date-range'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

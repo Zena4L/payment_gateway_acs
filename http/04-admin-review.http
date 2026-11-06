@@ -1,0 +1,110 @@
+### Initiate a payment to put under review
+< {%
+    client.global.set("reviewReference", "IJ-REVIEW-" + Date.now());
+%}
+POST {{baseUrl}}/api/v1/payments/initiate
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "reference": "{{reviewReference}}",
+  "email": "customer@example.com",
+  "amount": 150.00,
+  "currency": "GHS"
+}
+
+> {%
+    client.test("initiated", () => client.assert(response.status === 201, "expected 201"));
+%}
+
+### Webhook with the wrong amount (moves the payment to REQUIRES_REVIEW)
+< {%
+    const body = JSON.stringify({
+        event: "charge.success",
+        data: { id: Date.now(), status: "success", reference: client.global.get("reviewReference"), amount: 1500, currency: "GHS" }
+    });
+    client.global.set("reviewWebhookBody", body);
+    client.global.set("reviewWebhookSignature",
+        crypto.hmac.sha512().withTextSecret(request.environment.get("paystackSecret")).updateWithText(body).digest().toHex());
+%}
+POST {{baseUrl}}/api/v1/webhooks/paystack
+Content-Type: application/json
+x-paystack-signature: {{reviewWebhookSignature}}
+
+{{reviewWebhookBody}}
+
+> {%
+    client.test("accepted", () => client.assert(response.status === 200, "expected 200"));
+%}
+
+### Review queue (admin)
+< {%
+    const waitUntil = Date.now() + 3000;
+    while (Date.now() < waitUntil) {
+    }
+%}
+GET {{baseUrl}}/api/v1/payments?status=REQUIRES_REVIEW&reference={{reviewReference}}
+X-API-Key: {{adminKey}}
+
+> {%
+    client.test("payment is waiting for review", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.totalElements === 1, "expected one payment in review");
+    });
+    client.global.set("reviewTransactionId", response.body.content[0].id);
+%}
+
+### Audit trail before the decision (admin)
+GET {{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/transitions
+X-API-Key: {{adminKey}}
+
+> {%
+    client.test("last step is the review", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body[response.body.length - 1].to === "REQUIRES_REVIEW", "expected REQUIRES_REVIEW");
+    });
+%}
+
+### Resolve as FAILED (admin)
+POST {{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/resolution
+X-API-Key: {{adminKey}}
+Content-Type: application/json
+
+{
+  "outcome": "FAILED",
+  "reason": "Amount mismatch confirmed with Paystack support"
+}
+
+> {%
+    client.test("resolved", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.status === "FAILED", "expected FAILED");
+    });
+%}
+
+### Resolve again (admin)
+POST {{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/resolution
+X-API-Key: {{adminKey}}
+Content-Type: application/json
+
+{
+  "outcome": "SUCCESS",
+  "reason": "Second attempt"
+}
+
+> {%
+    client.test("no longer under review", () => client.assert(response.status === 409, "expected 409"));
+%}
+
+### Audit trail after the decision (admin)
+GET {{baseUrl}}/api/v1/admin/payments/{{reviewTransactionId}}/transitions
+X-API-Key: {{adminKey}}
+
+> {%
+    client.test("admin step recorded with who and why", () => {
+        const last = response.body[response.body.length - 1];
+        client.assert(last.trigger === "ADMIN", "expected ADMIN");
+        client.assert(typeof last.actor === "string" && last.actor.length > 0, "expected an actor");
+        client.assert(last.reason === "Amount mismatch confirmed with Paystack support", "expected the reason");
+    });
+%}

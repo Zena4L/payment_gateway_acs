@@ -1,0 +1,58 @@
+### charge.success, signed like Paystack
+< {%
+    const body = JSON.stringify({
+        event: "charge.success",
+        data: { id: Date.now(), status: "success", reference: client.global.get("reference"), amount: 15000, currency: "GHS" }
+    });
+    client.global.set("webhookBody", body);
+    client.global.set("webhookSignature",
+        crypto.hmac.sha512().withTextSecret(request.environment.get("paystackSecret")).updateWithText(body).digest().toHex());
+%}
+POST {{baseUrl}}/api/v1/webhooks/paystack
+Content-Type: application/json
+x-paystack-signature: {{webhookSignature}}
+
+{{webhookBody}}
+
+> {%
+    client.test("accepted", () => client.assert(response.status === 200, "expected 200"));
+%}
+
+### Same event again (stored as a duplicate)
+POST {{baseUrl}}/api/v1/webhooks/paystack
+Content-Type: application/json
+x-paystack-signature: {{webhookSignature}}
+
+{{webhookBody}}
+
+> {%
+    client.test("duplicate acknowledged", () => client.assert(response.status === 200, "expected 200"));
+%}
+
+### Invalid signature
+POST {{baseUrl}}/api/v1/webhooks/paystack
+Content-Type: application/json
+x-paystack-signature: 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+{{webhookBody}}
+
+> {%
+    client.test("rejected", () => client.assert(response.status === 401, "expected 401"));
+%}
+
+### Unhandled event type
+< {%
+    const body = JSON.stringify({ event: "transfer.success", data: { id: Date.now(), reference: "TRF-" + Date.now(), amount: 100, currency: "GHS" } });
+    client.global.set("otherWebhookBody", body);
+    client.global.set("otherWebhookSignature",
+        crypto.hmac.sha512().withTextSecret(request.environment.get("paystackSecret")).updateWithText(body).digest().toHex());
+%}
+POST {{baseUrl}}/api/v1/webhooks/paystack
+Content-Type: application/json
+x-paystack-signature: {{otherWebhookSignature}}
+
+{{otherWebhookBody}}
+
+> {%
+    client.test("acknowledged and ignored", () => client.assert(response.status === 200, "expected 200"));
+%}

@@ -1,0 +1,111 @@
+### Initiate a payment
+< {%
+    client.global.set("reference", "IJ-" + Date.now());
+%}
+POST {{baseUrl}}/api/v1/payments/initiate
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "reference": "{{reference}}",
+  "email": "customer@example.com",
+  "amount": 150.00,
+  "currency": "GHS"
+}
+
+> {%
+    client.test("pending with a checkout link", () => {
+        client.assert(response.status === 201, "expected 201");
+        client.assert(response.body.status === "PENDING", "expected PENDING");
+        client.assert(response.body.authorizationUrl.startsWith("https://checkout.paystack.com/"), "expected a Paystack link");
+    });
+    client.global.set("authorizationUrl", response.body.authorizationUrl);
+%}
+
+### Replay the identical request
+POST {{baseUrl}}/api/v1/payments/initiate
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "reference": "{{reference}}",
+  "email": "customer@example.com",
+  "amount": 150.00,
+  "currency": "GHS"
+}
+
+> {%
+    client.test("replay returns the same payment", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.authorizationUrl === client.global.get("authorizationUrl"), "expected the same link");
+    });
+%}
+
+### Reuse the reference with a different amount
+POST {{baseUrl}}/api/v1/payments/initiate
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "reference": "{{reference}}",
+  "email": "customer@example.com",
+  "amount": 200.00,
+  "currency": "GHS"
+}
+
+> {%
+    client.test("conflict", () => client.assert(response.status === 409, "expected 409"));
+%}
+
+### Verify the payment
+GET {{baseUrl}}/api/v1/payments/verify/{{reference}}
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("verified", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.reference === client.global.get("reference"), "expected the same reference");
+    });
+%}
+
+### List payments, newest first
+GET {{baseUrl}}/api/v1/payments?page=0&size=5&sort=createdAt&direction=desc
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("page envelope", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.size === 5, "expected size 5");
+    });
+%}
+
+### List filtered by reference and status
+GET {{baseUrl}}/api/v1/payments?reference={{reference}}&status=PENDING
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("finds exactly this payment", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.totalElements === 1, "expected one match");
+    });
+    client.global.set("transactionId", response.body.content[0].id);
+%}
+
+### Get the payment by id
+GET {{baseUrl}}/api/v1/payments/{{transactionId}}
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("transaction without internal fields", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.gatewayResponse === undefined, "gatewayResponse must not be exposed");
+    });
+%}
+
+### Get an unknown payment
+GET {{baseUrl}}/api/v1/payments/00000000-0000-7000-8000-000000000000
+X-API-Key: {{clientKey}}
+
+> {%
+    client.test("not found", () => client.assert(response.status === 404, "expected 404"));
+%}

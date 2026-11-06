@@ -1,0 +1,60 @@
+### Health
+GET {{baseUrl}}/actuator/health
+
+> {%
+    client.test("service is up", () => {
+        client.assert(response.status === 200, "expected 200");
+        client.assert(response.body.status === "UP", "expected UP");
+    });
+%}
+
+### Issue a client key (admin)
+POST {{baseUrl}}/api/v1/admin/api-keys
+X-API-Key: {{adminKey}}
+Content-Type: application/json
+
+{
+  "ownerId": "intellij-{{$timestamp}}",
+  "role": "CLIENT"
+}
+
+> {%
+    client.test("key issued once", () => {
+        client.assert(response.status === 201, "expected 201");
+        client.assert(/^acs_[0-9a-f]{12}\./.test(response.body.apiKey), "expected an acs_ key");
+    });
+    client.global.set("clientKey", response.body.apiKey);
+    client.global.set("keyId", response.body.keyId);
+%}
+
+### Issue a throwaway key (admin)
+POST {{baseUrl}}/api/v1/admin/api-keys
+X-API-Key: {{adminKey}}
+Content-Type: application/json
+
+{
+  "ownerId": "intellij-throwaway",
+  "role": "CLIENT"
+}
+
+> {%
+    client.test("throwaway issued", () => client.assert(response.status === 201, "expected 201"));
+    client.global.set("throwawayKey", response.body.apiKey);
+    client.global.set("throwawayKeyId", response.body.keyId);
+%}
+
+### Revoke the throwaway key (admin)
+DELETE {{baseUrl}}/api/v1/admin/api-keys/{{throwawayKeyId}}
+X-API-Key: {{adminKey}}
+
+> {%
+    client.test("revoked", () => client.assert(response.status === 204, "expected 204"));
+%}
+
+### Revoked key is rejected
+GET {{baseUrl}}/api/v1/payments
+X-API-Key: {{throwawayKey}}
+
+> {%
+    client.test("revoked key gets 401", () => client.assert(response.status === 401, "expected 401"));
+%}
