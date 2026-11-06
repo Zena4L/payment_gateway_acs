@@ -1,0 +1,20 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  docker:
+    compose:
+      enabled: true
+      lifecycle-management: start-only
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+acs:
+  paystack:
+    secret-key: ${ACS_PAYSTACK_SECRET_KEY:}
+
+logging:
+  level:
+    org.clement.acs_payment: DEBUG
+    org.hibernate.SQL: DEBUG

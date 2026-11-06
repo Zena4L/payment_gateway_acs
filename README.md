@@ -16,6 +16,8 @@ The design is in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 You'll need Java 25 and Docker.
 
+Copy `sample.env` to `.env` and put your Paystack test secret key in it.
+
 Run the app:
 
 ```bash
