@@ -1,0 +1,18 @@
+spring:
+  docker:
+    compose:
+      enabled: false
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+server:
+  forward-headers-strategy: native
+
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    org.clement.acs_payment: DEBUG
