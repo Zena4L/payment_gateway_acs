@@ -65,8 +65,6 @@ public class Payment {
 
     private @Nullable String authorizationUrl;
 
-    private @Nullable String accessCode;
-
     private @Nullable String gatewayResponse;
 
     private @Nullable Instant paidAt;
@@ -101,14 +99,6 @@ public class Payment {
         return payment;
     }
 
-    public static String normalizeEmail(String email) {
-        return email.strip().toLowerCase(Locale.ROOT);
-    }
-
-    public Money money() {
-        return new Money(amount, currency);
-    }
-
     public boolean matches(String ownerId, String email, Money money) {
         return this.ownerId.equals(ownerId)
                 && this.email.equals(normalizeEmail(email))
@@ -116,11 +106,10 @@ public class Payment {
                 && this.amount.compareTo(money.amount()) == 0;
     }
 
-    public TransitionResult markInitialized(String authorizationUrl, String accessCode, Clock clock) {
+    public TransitionResult markInitialized(String authorizationUrl, Clock clock) {
         var result = transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, clock);
         if (result == TransitionResult.APPLIED) {
             this.authorizationUrl = authorizationUrl;
-            this.accessCode = accessCode;
         }
         return result;
     }
@@ -158,9 +147,11 @@ public class Payment {
     }
 
     public boolean matchesProviderRecord(String reference, long amountMinor, String currencyCode) {
-        return this.reference.equals(reference)
-                && this.amountMinor == amountMinor
-                && this.currency.getCurrencyCode().equals(currencyCode);
+        return this.reference.equals(reference) && matchesAmount(amountMinor, currencyCode);
+    }
+
+    public boolean matchesAmount(long amountMinor, String currencyCode) {
+        return this.amountMinor == amountMinor && this.currency.getCurrencyCode().equals(currencyCode);
     }
 
     public TransitionResult transitionTo(PaymentStatus next, TransitionTrigger trigger, Clock clock) {
@@ -197,6 +188,10 @@ public class Payment {
         record(status, next, trigger, now);
         status = next;
         updatedAt = now;
+    }
+
+    private static String normalizeEmail(String email) {
+        return email.strip().toLowerCase(Locale.ROOT);
     }
 
     private void recordProviderDetails(ProviderDetails details) {

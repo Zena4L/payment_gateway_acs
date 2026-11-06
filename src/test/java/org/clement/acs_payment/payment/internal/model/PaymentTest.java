@@ -168,15 +168,14 @@ class PaymentTest {
     }
 
     @Test
-    void storesCheckoutDetailsWhenInitialized() {
+    void storesCheckoutLinkWhenInitialized() {
         var payment = newPayment();
 
-        var result = payment.markInitialized("https://checkout.paystack.com/abc", "abc", LATER_CLOCK);
+        var result = payment.markInitialized("https://checkout.paystack.com/abc", LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.APPLIED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(payment.getAuthorizationUrl()).isEqualTo("https://checkout.paystack.com/abc");
-        assertThat(payment.getAccessCode()).isEqualTo("abc");
     }
 
     @Test
@@ -184,7 +183,7 @@ class PaymentTest {
         var payment = pendingPayment();
         payment.markFailed("declined", TransitionTrigger.VERIFY, LATER_CLOCK);
 
-        var result = payment.markInitialized("https://checkout.paystack.com/late", "late", LATER_CLOCK);
+        var result = payment.markInitialized("https://checkout.paystack.com/late", LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getAuthorizationUrl()).isNull();

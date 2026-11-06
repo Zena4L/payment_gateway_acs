@@ -27,14 +27,14 @@ class PaymentController {
     private final PaymentInitiationService initiation;
     private final PaymentVerificationService verification;
 
-    @PostMapping
+    @PostMapping("/initiate")
     ResponseEntity<PaymentResponse> initiate(@Valid @RequestBody InitiatePaymentRequest request,
                                              @AuthenticationPrincipal ApiClient client) {
         var result = initiation.initiate(request.toCommand(client.ownerId()));
         return ResponseEntity.status(statusFor(result)).body(PaymentResponse.from(result.payment()));
     }
 
-    @GetMapping("/{reference}/verify")
+    @GetMapping("/verify/{reference}")
     PaymentResponse verify(@PathVariable String reference, @AuthenticationPrincipal ApiClient client) {
         return PaymentResponse.from(verification.verify(reference, client));
     }

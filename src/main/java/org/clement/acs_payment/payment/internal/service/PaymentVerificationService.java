@@ -11,7 +11,6 @@ import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.PaystackGateway;
 import org.clement.acs_payment.paystack.VerificationResult;
 import org.clement.acs_payment.security.ApiClient;
-import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -33,15 +32,8 @@ public class PaymentVerificationService {
         return switch (result) {
             case VerificationResult.Unavailable() -> throw ProviderUnavailableException.duringVerification();
             case VerificationResult.Rejected(_) -> throw new ProviderRejectedException();
-            case VerificationResult.Found(_), VerificationResult.NotFound() -> apply(payment, result);
+            case VerificationResult.Found(_), VerificationResult.NotFound() ->
+                    OptimisticLocking.retryOnce(() -> outcomes.apply(payment.getId(), result, TransitionTrigger.VERIFY));
         };
-    }
-
-    private Payment apply(Payment payment, VerificationResult result) {
-        try {
-            return outcomes.apply(payment.getId(), result, TransitionTrigger.VERIFY);
-        } catch (ObjectOptimisticLockingFailureException ex) {
-            return outcomes.apply(payment.getId(), result, TransitionTrigger.VERIFY);
-        }
     }
 }

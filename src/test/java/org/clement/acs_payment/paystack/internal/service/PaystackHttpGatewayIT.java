@@ -61,7 +61,7 @@ class PaystackHttpGatewayIT {
 
         var result = gateway(paystack.baseUrl()).initialize(REQUEST);
 
-        assertThat(result).isEqualTo(new InitializationResult.Initialized("https://checkout.paystack.com/abc", "abc"));
+        assertThat(result).isEqualTo(new InitializationResult.Initialized("https://checkout.paystack.com/abc"));
         paystack.verify(1, postRequestedFor(urlEqualTo(INITIALIZE))
                 .withHeader("Authorization", equalTo("Bearer " + SECRET))
                 .withRequestBody(equalToJson("""
@@ -142,6 +142,50 @@ class PaystackHttpGatewayIT {
 
         assertThat(result).isInstanceOf(InitializationResult.Initialized.class);
         paystack.verify(2, postRequestedFor(urlEqualTo(INITIALIZE)));
+    }
+
+    @Test
+    void waitsForRetryAfterBeforeRetryingInitialize() {
+        paystack.stubFor(post(INITIALIZE).inScenario("retry-after").whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "1")).willSetStateTo("recovered"));
+        paystack.stubFor(post(INITIALIZE).inScenario("retry-after").whenScenarioStateIs("recovered")
+                .willReturn(json(200, SUCCESS_BODY)));
+
+        var started = System.nanoTime();
+        var result = gateway(paystack.baseUrl()).initialize(REQUEST);
+        var elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+        assertThat(result).isInstanceOf(InitializationResult.Initialized.class);
+        assertThat(elapsed).isGreaterThanOrEqualTo(Duration.ofMillis(950));
+        paystack.verify(2, postRequestedFor(urlEqualTo(INITIALIZE)));
+    }
+
+    @Test
+    void capsRetryAfterAtConfiguredMaximum() {
+        paystack.stubFor(post(INITIALIZE).inScenario("long-retry-after").whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "60")).willSetStateTo("recovered"));
+        paystack.stubFor(post(INITIALIZE).inScenario("long-retry-after").whenScenarioStateIs("recovered")
+                .willReturn(json(200, SUCCESS_BODY)));
+
+        var started = System.nanoTime();
+        gateway(paystack.baseUrl()).initialize(REQUEST);
+        var elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+        assertThat(elapsed).isBetween(Duration.ofMillis(1950), Duration.ofSeconds(10));
+    }
+
+    @Test
+    void waitsForRetryAfterBeforeRetryingVerify() {
+        paystack.stubFor(get("/transaction/verify/PAY-1").inScenario("verify-retry-after").whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withStatus(429).withHeader("Retry-After", "1")).willSetStateTo("recovered"));
+        paystack.stubFor(get("/transaction/verify/PAY-1").inScenario("verify-retry-after").whenScenarioStateIs("recovered")
+                .willReturn(json(200, verifyBody("success", "PAY-1", 15000, "GHS"))));
+
+        var started = System.nanoTime();
+        var result = gateway(paystack.baseUrl()).verify("PAY-1");
+
+        assertThat(result).isInstanceOf(VerificationResult.Found.class);
+        assertThat(Duration.ofNanos(System.nanoTime() - started)).isGreaterThanOrEqualTo(Duration.ofMillis(950));
     }
 
     @Test
@@ -358,7 +402,7 @@ class PaystackHttpGatewayIT {
                 SECRET,
                 Duration.ofMillis(500),
                 Duration.ofMillis(500),
-                new PaystackProperties.Retry(3, Duration.ofMillis(10)));
+                new PaystackProperties.Retry(3, Duration.ofMillis(10), Duration.ofSeconds(2)));
         var webClient = new PaystackClientConfiguration().paystackWebClient(WebClient.builder(), properties);
         return new PaystackHttpGateway(webClient, properties, JsonMapper.builder().build());
     }

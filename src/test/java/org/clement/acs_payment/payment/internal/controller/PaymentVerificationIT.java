@@ -312,7 +312,7 @@ class PaymentVerificationIT {
 
     @Test
     void requiresAuthentication() throws Exception {
-        mvc.perform(get("/api/v1/payments/{reference}/verify", "PAY-1")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/payments/verify/{reference}", "PAY-1")).andExpect(status().isUnauthorized());
 
         verify(paystack, never()).verify(any());
     }
@@ -320,7 +320,7 @@ class PaymentVerificationIT {
     private ResultActions verifyAs(String ownerId, Role role, String reference) throws Exception {
         var principal = UsernamePasswordAuthenticationToken.authenticated(
                 new ApiClient(ownerId, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
-        return mvc.perform(get("/api/v1/payments/{reference}/verify", reference).with(authentication(principal)));
+        return mvc.perform(get("/api/v1/payments/verify/{reference}", reference).with(authentication(principal)));
     }
 
     private void providerReports(Payment payment, ProviderStatus status) {
@@ -351,19 +351,19 @@ class PaymentVerificationIT {
         switch (status) {
             case INITIALIZING -> {
             }
-            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", "abc", clock);
+            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", clock);
             case UNKNOWN -> payment.markOutcomeUnknown(clock);
             case FAILED -> payment.markFailed("Declined", TransitionTrigger.INITIATE, clock);
             case SUCCESS -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", "abc", clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", clock);
                 payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, clock);
             }
             case EXPIRED -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", "abc", clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", clock);
                 payment.transitionTo(PaymentStatus.EXPIRED, TransitionTrigger.RECONCILER, clock);
             }
             case REQUIRES_REVIEW -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", "abc", clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", clock);
                 payment.flagForReview(TransitionTrigger.VERIFY, clock);
             }
         }

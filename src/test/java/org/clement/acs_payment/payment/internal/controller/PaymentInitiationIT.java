@@ -56,10 +56,9 @@ import org.springframework.test.web.servlet.ResultActions;
 @ExtendWith(OutputCaptureExtension.class)
 class PaymentInitiationIT {
 
-    private static final String PAYMENTS = "/api/v1/payments";
+    private static final String PAYMENTS = "/api/v1/payments/initiate";
     private static final String CHECKOUT_URL = "https://checkout.paystack.com/abc";
-    private static final String ACCESS_CODE = "access-code-should-never-leak";
-    private static final InitializationResult INITIALIZED = new InitializationResult.Initialized(CHECKOUT_URL, ACCESS_CODE);
+    private static final InitializationResult INITIALIZED = new InitializationResult.Initialized(CHECKOUT_URL);
 
     @Autowired
     MockMvc mvc;
@@ -109,13 +108,12 @@ class PaymentInitiationIT {
                 .andExpect(jsonPath("$.accessCode").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
 
-        assertThat(body).doesNotContain(ACCESS_CODE);
-        assertThat(JsonPath.<String>read(body, "$.message")).doesNotContainIgnoringCase("success").doesNotContainIgnoringCase("paid");
+        assertThat(JsonPath.<Boolean>read(body, "$.success")).isTrue();
+        assertThat(JsonPath.<String>read(body, "$.message")).isEqualTo("Payment initialized successfully").doesNotContainIgnoringCase("paid");
         assertThat(JsonPath.<Object>read(body, "$.paidAt")).isNull();
         var payment = payments.findByReference(reference).orElseThrow();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(payment.getAuthorizationUrl()).isEqualTo(CHECKOUT_URL);
-        assertThat(payment.getAccessCode()).isEqualTo(ACCESS_CODE);
         assertThat(payment.getOwnerId()).isEqualTo("client-a");
         assertThat(payment.getAmountMinor()).isEqualTo(15000L);
         assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(payment.getId()))
@@ -304,8 +302,8 @@ class PaymentInitiationIT {
         var rejected = initiate("client-a", body(uniqueReference(), "jane@example.com", "150.00", "GHS"))
                 .andReturn().getResponse().getContentAsString();
 
-        assertThat(created + rejected).doesNotContain(ACCESS_CODE).doesNotContain("sk_test_dummy").doesNotContain("Exception").doesNotContain("Invalid key");
-        assertThat(output.getAll()).doesNotContain(ACCESS_CODE).doesNotContain("sk_test_dummy").doesNotContain("jane@example.com");
+        assertThat(created + rejected).doesNotContain("sk_test_dummy").doesNotContain("Exception").doesNotContain("Invalid key");
+        assertThat(output.getAll()).doesNotContain("sk_test_dummy").doesNotContain("jane@example.com");
     }
 
     @Test

@@ -2,15 +2,14 @@ package org.clement.acs_payment.paystack;
 
 public sealed interface InitializationResult {
 
-    record Initialized(String authorizationUrl, String accessCode) implements InitializationResult {
-
-        @Override
-        public String toString() {
-            return "Initialized[authorizationUrl=" + authorizationUrl + "]";
-        }
+    record Initialized(String authorizationUrl) implements InitializationResult {
     }
 
     record Rejected(RejectionReason reason, String message) implements InitializationResult {
+
+        public boolean alreadyKnownToProvider() {
+            return reason == RejectionReason.DUPLICATE_REFERENCE;
+        }
     }
 
     record Unavailable() implements InitializationResult {
