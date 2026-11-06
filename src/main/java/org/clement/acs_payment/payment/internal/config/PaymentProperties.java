@@ -8,6 +8,6 @@ import org.springframework.validation.annotation.Validated;
 
 @Validated
 @ConfigurationProperties("acs.payment")
-record PaymentProperties(
+public record PaymentProperties(
         @NotEmpty Set<@Pattern(regexp = "[A-Z]{3}") String> supportedCurrencies) {
 }

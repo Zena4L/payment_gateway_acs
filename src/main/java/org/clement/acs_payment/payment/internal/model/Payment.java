@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Currency;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -36,6 +37,7 @@ import org.springframework.data.domain.DomainEvents;
 public class Payment {
 
     private static final String PROVIDER = "PAYSTACK";
+    private static final int MAX_GATEWAY_RESPONSE = 255;
 
     @Id
     private UUID id;
@@ -86,7 +88,7 @@ public class Payment {
                 .id(UuidV7.next())
                 .reference(reference)
                 .ownerId(ownerId)
-                .email(email)
+                .email(normalizeEmail(email))
                 .amount(money.amount())
                 .amountMinor(money.minorUnits())
                 .currency(money.currency())
@@ -99,8 +101,40 @@ public class Payment {
         return payment;
     }
 
+    public static String normalizeEmail(String email) {
+        return email.strip().toLowerCase(Locale.ROOT);
+    }
+
     public Money money() {
         return new Money(amount, currency);
+    }
+
+    public boolean matches(String ownerId, String email, Money money) {
+        return this.ownerId.equals(ownerId)
+                && this.email.equals(normalizeEmail(email))
+                && this.currency.equals(money.currency())
+                && this.amount.compareTo(money.amount()) == 0;
+    }
+
+    public TransitionResult markInitialized(String authorizationUrl, String accessCode, Clock clock) {
+        var result = transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, clock);
+        if (result == TransitionResult.APPLIED) {
+            this.authorizationUrl = authorizationUrl;
+            this.accessCode = accessCode;
+        }
+        return result;
+    }
+
+    public TransitionResult markOutcomeUnknown(Clock clock) {
+        return transitionTo(PaymentStatus.UNKNOWN, TransitionTrigger.INITIATE, clock);
+    }
+
+    public TransitionResult markFailed(String reason, TransitionTrigger trigger, Clock clock) {
+        var result = transitionTo(PaymentStatus.FAILED, trigger, clock);
+        if (result == TransitionResult.APPLIED) {
+            this.gatewayResponse = reason.length() > MAX_GATEWAY_RESPONSE ? reason.substring(0, MAX_GATEWAY_RESPONSE) : reason;
+        }
+        return result;
     }
 
     public TransitionResult transitionTo(PaymentStatus next, TransitionTrigger trigger, Clock clock) {

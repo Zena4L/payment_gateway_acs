@@ -83,6 +83,9 @@ acs:
     base-url: https://api.paystack.co
     connect-timeout: 2s
     response-timeout: 10s
+    retry:
+      max-attempts: 3
+      initial-backoff: 500ms
   payment:
     supported-currencies: GHS
   reconciliation:
