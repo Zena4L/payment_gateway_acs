@@ -209,6 +209,80 @@ class PaymentTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
     }
 
+    @Test
+    void matchesProviderRecordOnReferenceMinorAmountAndCurrency() {
+        var payment = newPayment();
+
+        assertThat(payment.matchesProviderRecord("PAY-1", 15000, "GHS")).isTrue();
+        assertThat(payment.matchesProviderRecord("PAY-2", 15000, "GHS")).isFalse();
+        assertThat(payment.matchesProviderRecord("PAY-1", 14999, "GHS")).isFalse();
+        assertThat(payment.matchesProviderRecord("PAY-1", 15000, "NGN")).isFalse();
+    }
+
+    @Test
+    void storesProviderDetailsWhenMarkedSucceeded() {
+        var payment = pendingPayment();
+        var paidAt = Instant.parse("2026-11-06T10:15:30Z");
+
+        payment.markSucceeded(details(paidAt), TransitionTrigger.VERIFY, LATER_CLOCK);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        assertThat(payment.getProviderTransactionId()).isEqualTo(4099260516L);
+        assertThat(payment.getChannel()).isEqualTo("card");
+        assertThat(payment.getPaidAt()).isEqualTo(paidAt);
+        assertThat(payment.getGatewayResponse()).isEqualTo("Approved");
+        assertThat(payment.getUpdatedAt()).isEqualTo(LATER_CLOCK.instant());
+    }
+
+    @Test
+    void storesProviderDetailsWhenMarkedFailedByProvider() {
+        var payment = pendingPayment();
+
+        payment.markFailed(details(null), TransitionTrigger.VERIFY, LATER_CLOCK);
+
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(payment.getProviderTransactionId()).isEqualTo(4099260516L);
+    }
+
+    @Test
+    void keepsExistingDetailsWhenProviderOutcomeIsRejected() {
+        var payment = pendingPayment();
+        payment.markSucceeded(details(Instant.parse("2026-11-06T10:15:30Z")), TransitionTrigger.VERIFY, LATER_CLOCK);
+
+        var result = payment.markFailed(ProviderDetails.builder().transactionId(1).gatewayResponse("Declined").build(), TransitionTrigger.WEBHOOK, LATER_CLOCK);
+
+        assertThat(result).isEqualTo(TransitionResult.REJECTED);
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+        assertThat(payment.getProviderTransactionId()).isEqualTo(4099260516L);
+        assertThat(payment.getGatewayResponse()).isEqualTo("Approved");
+    }
+
+    @Test
+    void flagsPendingPaymentForReview() {
+        var payment = pendingPayment();
+
+        assertThat(payment.flagForReview(TransitionTrigger.VERIFY, LATER_CLOCK)).isEqualTo(TransitionResult.APPLIED);
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUIRES_REVIEW);
+    }
+
+    @Test
+    void neverFlagsFinalPaymentForReview() {
+        var payment = pendingPayment();
+        payment.markSucceeded(details(null), TransitionTrigger.VERIFY, LATER_CLOCK);
+
+        assertThat(payment.flagForReview(TransitionTrigger.VERIFY, LATER_CLOCK)).isEqualTo(TransitionResult.REJECTED);
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+    }
+
+    private static ProviderDetails details(Instant paidAt) {
+        return ProviderDetails.builder()
+                .transactionId(4099260516L)
+                .channel("card")
+                .paidAt(paidAt)
+                .gatewayResponse("Approved")
+                .build();
+    }
+
     private static Payment newPayment() {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
         return Payment.initialize("PAY-1", "client-a", "jane@example.com", money, CREATED_CLOCK);

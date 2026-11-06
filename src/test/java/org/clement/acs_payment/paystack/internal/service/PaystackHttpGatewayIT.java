@@ -3,6 +3,8 @@ package org.clement.acs_payment.paystack.internal.service;
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
@@ -16,13 +18,20 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.time.Duration;
+import java.time.Instant;
 import org.clement.acs_payment.paystack.InitializationResult;
 import org.clement.acs_payment.paystack.InitializeTransaction;
+import org.clement.acs_payment.paystack.ProviderStatus;
+import org.clement.acs_payment.paystack.ProviderTransaction;
 import org.clement.acs_payment.paystack.RejectionReason;
+import org.clement.acs_payment.paystack.VerificationResult;
 import org.clement.acs_payment.paystack.internal.config.PaystackClientConfiguration;
 import org.clement.acs_payment.paystack.internal.config.PaystackProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.web.reactive.function.client.WebClient;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -197,6 +206,150 @@ class PaystackHttpGatewayIT {
 
         assertThat(result).isInstanceOf(InitializationResult.Unavailable.class);
         paystack.verify(0, postRequestedFor(urlEqualTo(INITIALIZE)));
+    }
+
+    @Test
+    void verifiesTransactionAndReadsProviderDetails() {
+        stubVerify("PAY-1", 200, verifyBody("success", "PAY-1", 15000, "GHS"));
+
+        var result = gateway(paystack.baseUrl()).verify("PAY-1");
+
+        assertThat(result).isEqualTo(new VerificationResult.Found(ProviderTransaction.builder()
+                .id(4099260516L)
+                .status(ProviderStatus.SUCCESS)
+                .rawStatus("success")
+                .reference("PAY-1")
+                .amountMinor(15000)
+                .currency("GHS")
+                .channel("card")
+                .paidAt(Instant.parse("2026-11-06T10:15:30Z"))
+                .gatewayResponse("Approved")
+                .build()));
+        paystack.verify(1, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1"))
+                .withHeader("Authorization", equalTo("Bearer " + SECRET)));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "success, SUCCESS",
+            "failed, FAILED",
+            "abandoned, PENDING",
+            "ongoing, PENDING",
+            "pending, PENDING",
+            "processing, PENDING",
+            "queued, PENDING",
+            "reversed, REVERSED",
+            "something-new, UNRECOGNIZED"
+    })
+    void mapsPaystackStatusToProviderStatus(String paystackStatus, ProviderStatus expected) {
+        stubVerify("PAY-1", 200, verifyBody(paystackStatus, "PAY-1", 15000, "GHS"));
+
+        var result = gateway(paystack.baseUrl()).verify("PAY-1");
+
+        assertThat(((VerificationResult.Found) result).transaction().status()).isEqualTo(expected);
+    }
+
+    @Test
+    void reportsUnknownReferenceAsNotFound() {
+        stubVerify("PAY-1", 400, "{\"status\":false,\"message\":\"Transaction reference not found\"}");
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.NotFound.class);
+        paystack.verify(1, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @Test
+    void reports404AsNotFound() {
+        stubVerify("PAY-1", 404, "");
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.NotFound.class);
+    }
+
+    @Test
+    void rejectsVerifyWithInvalidCredentialsWithoutRetrying() {
+        stubVerify("PAY-1", 401, "{\"status\":false,\"message\":\"Invalid key\"}");
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.Rejected.class);
+        paystack.verify(1, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @Test
+    void retriesVerifyAfterRateLimit() {
+        paystack.stubFor(get("/transaction/verify/PAY-1").inScenario("verify-rate-limit").whenScenarioStateIs(STARTED)
+                .willReturn(aResponse().withStatus(429)).willSetStateTo("recovered"));
+        paystack.stubFor(get("/transaction/verify/PAY-1").inScenario("verify-rate-limit").whenScenarioStateIs("recovered")
+                .willReturn(json(200, verifyBody("success", "PAY-1", 15000, "GHS"))));
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.Found.class);
+        paystack.verify(2, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {500, 502, 503, 504})
+    void retriesVerifyOnServerErrorsThenReportsUnavailable(int status) {
+        stubVerify("PAY-1", status, "");
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.Unavailable.class);
+        paystack.verify(3, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @Test
+    void retriesVerifyAfterTimeout() {
+        paystack.stubFor(get("/transaction/verify/PAY-1").willReturn(json(200, verifyBody("success", "PAY-1", 15000, "GHS")).withFixedDelay(1500)));
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.Unavailable.class);
+        paystack.verify(3, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @Test
+    void retriesVerifyOnMalformedBody() {
+        stubVerify("PAY-1", 200, "{\"status\":true,\"data\":{\"status\":\"success\"}}");
+
+        assertThat(gateway(paystack.baseUrl()).verify("PAY-1")).isInstanceOf(VerificationResult.Unavailable.class);
+        paystack.verify(3, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @Test
+    void verifyFailsFastWhenCircuitBreakerIsOpen() {
+        stubVerify("PAY-1", 200, verifyBody("success", "PAY-1", 15000, "GHS"));
+        var gateway = gateway(paystack.baseUrl());
+        gateway.getCircuitBreaker().transitionToOpenState();
+
+        assertThat(gateway.verify("PAY-1")).isInstanceOf(VerificationResult.Unavailable.class);
+        paystack.verify(0, getRequestedFor(urlEqualTo("/transaction/verify/PAY-1")));
+    }
+
+    @Test
+    void encodesReferenceInVerifyPath() {
+        paystack.stubFor(get(urlEqualTo("/transaction/verify/PAY%201")).willReturn(json(200, verifyBody("pending", "PAY 1", 15000, "GHS"))));
+
+        var result = gateway(paystack.baseUrl()).verify("PAY 1");
+
+        assertThat(result).isInstanceOf(VerificationResult.Found.class);
+    }
+
+    @Test
+    void leavesOptionalDetailsEmptyWhenMissing() {
+        stubVerify("PAY-1", 200, """
+                {"status":true,"data":{"id":1,"status":"abandoned","reference":"PAY-1","amount":15000,"currency":"GHS","paid_at":null}}
+                """);
+
+        var transaction = ((VerificationResult.Found) gateway(paystack.baseUrl()).verify("PAY-1")).transaction();
+
+        assertThat(transaction.channel()).isNull();
+        assertThat(transaction.paidAt()).isNull();
+        assertThat(transaction.gatewayResponse()).isNull();
+    }
+
+    private static String verifyBody(String status, String reference, long amount, String currency) {
+        return """
+                {"status":true,"message":"Verification successful",
+                 "data":{"id":4099260516,"status":"%s","reference":"%s","amount":%d,"currency":"%s",
+                         "channel":"card","paid_at":"2026-11-06T10:15:30.000Z","gateway_response":"Approved"}}
+                """.formatted(status, reference, amount, currency);
+    }
+
+    private static void stubVerify(String reference, int status, String body) {
+        paystack.stubFor(get("/transaction/verify/" + reference).willReturn(json(status, body)));
     }
 
     private static PaystackHttpGateway gateway(String baseUrl) {

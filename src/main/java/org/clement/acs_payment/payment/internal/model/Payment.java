@@ -132,9 +132,35 @@ public class Payment {
     public TransitionResult markFailed(String reason, TransitionTrigger trigger, Clock clock) {
         var result = transitionTo(PaymentStatus.FAILED, trigger, clock);
         if (result == TransitionResult.APPLIED) {
-            this.gatewayResponse = reason.length() > MAX_GATEWAY_RESPONSE ? reason.substring(0, MAX_GATEWAY_RESPONSE) : reason;
+            this.gatewayResponse = truncate(reason);
         }
         return result;
+    }
+
+    public TransitionResult markFailed(ProviderDetails details, TransitionTrigger trigger, Clock clock) {
+        var result = transitionTo(PaymentStatus.FAILED, trigger, clock);
+        if (result == TransitionResult.APPLIED) {
+            recordProviderDetails(details);
+        }
+        return result;
+    }
+
+    public TransitionResult markSucceeded(ProviderDetails details, TransitionTrigger trigger, Clock clock) {
+        var result = transitionTo(PaymentStatus.SUCCESS, trigger, clock);
+        if (result == TransitionResult.APPLIED) {
+            recordProviderDetails(details);
+        }
+        return result;
+    }
+
+    public TransitionResult flagForReview(TransitionTrigger trigger, Clock clock) {
+        return transitionTo(PaymentStatus.REQUIRES_REVIEW, trigger, clock);
+    }
+
+    public boolean matchesProviderRecord(String reference, long amountMinor, String currencyCode) {
+        return this.reference.equals(reference)
+                && this.amountMinor == amountMinor
+                && this.currency.getCurrencyCode().equals(currencyCode);
     }
 
     public TransitionResult transitionTo(PaymentStatus next, TransitionTrigger trigger, Clock clock) {
@@ -171,6 +197,18 @@ public class Payment {
         record(status, next, trigger, now);
         status = next;
         updatedAt = now;
+    }
+
+    private void recordProviderDetails(ProviderDetails details) {
+        this.providerTransactionId = details.transactionId();
+        this.channel = details.channel();
+        this.paidAt = details.paidAt();
+        var response = details.gatewayResponse();
+        this.gatewayResponse = response == null ? null : truncate(response);
+    }
+
+    private static String truncate(String text) {
+        return text.length() > MAX_GATEWAY_RESPONSE ? text.substring(0, MAX_GATEWAY_RESPONSE) : text;
     }
 
     private void record(@Nullable PaymentStatus from, PaymentStatus to, TransitionTrigger trigger, Instant at) {

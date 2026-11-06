@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -108,7 +109,9 @@ class PaymentInitiationIT {
                 .andExpect(jsonPath("$.accessCode").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
 
-        assertThat(body).doesNotContain(ACCESS_CODE).doesNotContainIgnoringCase("success").doesNotContainIgnoringCase("paid");
+        assertThat(body).doesNotContain(ACCESS_CODE);
+        assertThat(JsonPath.<String>read(body, "$.message")).doesNotContainIgnoringCase("success").doesNotContainIgnoringCase("paid");
+        assertThat(JsonPath.<Object>read(body, "$.paidAt")).isNull();
         var payment = payments.findByReference(reference).orElseThrow();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
         assertThat(payment.getAuthorizationUrl()).isEqualTo(CHECKOUT_URL);
