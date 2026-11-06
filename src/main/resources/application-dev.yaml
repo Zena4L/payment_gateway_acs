@@ -4,6 +4,7 @@ spring:
   docker:
     compose:
       enabled: true
+      file: compose.postgres.yaml
       lifecycle-management: start-only
   datasource:
     url: ${DB_URL}

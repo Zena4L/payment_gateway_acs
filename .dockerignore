@@ -1,0 +1,10 @@
+target/
+.git/
+.idea/
+.claude/
+docs/
+.env
+CLAUDE.md
+HELP.md
+*.pdf
+excalidraw.png
