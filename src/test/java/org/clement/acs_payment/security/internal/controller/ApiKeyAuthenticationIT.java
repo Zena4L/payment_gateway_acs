@@ -145,11 +145,10 @@ class ApiKeyAuthenticationIT {
     }
 
     @Test
-    void leavesWebhookEndpointOpenWithoutKey() throws Exception {
-        var status = mvc.perform(post("/api/v1/webhooks/paystack").contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andReturn().getResponse().getStatus();
-
-        assertThat(status).isNotIn(401, 403);
+    void leavesWebhookEndpointToSignatureCheckInsteadOfApiKeys() throws Exception {
+        mvc.perform(post("/api/v1/webhooks/paystack").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("invalid-signature"));
     }
 
     private String issueKey(String ownerId, String role) throws Exception {

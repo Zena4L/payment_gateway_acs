@@ -9,6 +9,7 @@ import org.jspecify.annotations.Nullable;
 
 @Builder
 public record PaymentResponse(
+        boolean success,
         String reference,
         PaymentStatus status,
         BigDecimal amount,
@@ -20,6 +21,7 @@ public record PaymentResponse(
 
     public static PaymentResponse from(Payment payment) {
         return PaymentResponse.builder()
+                .success(true)
                 .reference(payment.getReference())
                 .status(payment.getStatus())
                 .amount(payment.getAmount())
@@ -34,7 +36,7 @@ public record PaymentResponse(
     private static String messageFor(PaymentStatus status) {
         return switch (status) {
             case INITIALIZING -> "Payment is being initialized. Retry shortly to get the checkout link.";
-            case PENDING -> "Payment initialized. Redirect the customer to the authorization URL to complete payment.";
+            case PENDING -> "Payment initialized successfully";
             case UNKNOWN -> "We could not confirm that the payment was created. Its status is being confirmed.";
             case REQUIRES_REVIEW -> "Payment details did not match the provider's records and are under review.";
             case SUCCESS -> "Payment confirmed by the provider.";

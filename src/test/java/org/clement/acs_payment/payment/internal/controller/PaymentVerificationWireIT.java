@@ -60,7 +60,7 @@ class PaymentVerificationWireIT {
     void verifiesPaymentThroughRealPaystackClient() throws Exception {
         var reference = "PAY-" + UUID.randomUUID();
         var payment = Payment.initialize(reference, "client-a", "jane@example.com", new Money(new BigDecimal("150.00"), Currency.getInstance("GHS")), clock);
-        payment.markInitialized("https://checkout.paystack.com/abc", "abc", clock);
+        payment.markInitialized("https://checkout.paystack.com/abc", clock);
         payments.save(payment);
         paystack.stubFor(get("/transaction/verify/" + reference).willReturn(aResponse()
                 .withStatus(200)
@@ -71,7 +71,7 @@ class PaymentVerificationWireIT {
                                  "channel":"mobile_money","paid_at":"2026-11-06T10:15:30.000Z","gateway_response":"Approved"}}
                         """.formatted(reference))));
 
-        mvc.perform(MockMvcRequestBuilders.get("/api/v1/payments/{reference}/verify", reference)
+        mvc.perform(MockMvcRequestBuilders.get("/api/v1/payments/verify/{reference}", reference)
                         .with(authentication(UsernamePasswordAuthenticationToken.authenticated(
                                 new ApiClient("client-a", Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT"))))))
                 .andExpect(status().isOk())

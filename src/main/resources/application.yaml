@@ -86,6 +86,7 @@ acs:
     retry:
       max-attempts: 3
       initial-backoff: 500ms
+      max-retry-after: 5s
   payment:
     supported-currencies: GHS
   reconciliation:

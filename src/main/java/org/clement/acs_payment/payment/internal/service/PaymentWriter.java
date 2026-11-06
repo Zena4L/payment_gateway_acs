@@ -8,7 +8,6 @@ import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.TransitionTrigger;
 import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.InitializationResult;
-import org.clement.acs_payment.paystack.RejectionReason;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,9 +29,9 @@ public class PaymentWriter {
     public Payment applyInitialization(UUID paymentId, InitializationResult result) {
         var payment = payments.findById(paymentId).orElseThrow();
         switch (result) {
-            case InitializationResult.Initialized(var authorizationUrl, var accessCode) ->
-                    payment.markInitialized(authorizationUrl, accessCode, clock);
-            case InitializationResult.Rejected(var reason, _) when reason == RejectionReason.DUPLICATE_REFERENCE ->
+            case InitializationResult.Initialized(var authorizationUrl) ->
+                    payment.markInitialized(authorizationUrl, clock);
+            case InitializationResult.Rejected rejected when rejected.alreadyKnownToProvider() ->
                     payment.markOutcomeUnknown(clock);
             case InitializationResult.Rejected(_, var message) ->
                     payment.markFailed(message, TransitionTrigger.INITIATE, clock);

@@ -18,7 +18,7 @@ public record PaystackProperties(
         @NotNull Duration responseTimeout,
         @NotNull @Valid Retry retry) {
 
-    public record Retry(@Positive int maxAttempts, @NotNull Duration initialBackoff) {
+    public record Retry(@Positive int maxAttempts, @NotNull Duration initialBackoff, @NotNull Duration maxRetryAfter) {
     }
 
     @Override

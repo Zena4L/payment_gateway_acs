@@ -30,7 +30,7 @@ public class ApiKeyService {
         var key = parsed.get();
         var stored = keys.findByKeyId(key.keyId());
         if (stored.isEmpty()) {
-            ApiClientKey.hashesEqual(UNUSED_HASH, key.hash());
+            compareAgainstUnusedHashToKeepTimingConstant(key);
             return Optional.empty();
         }
         var clientKey = stored.get();
@@ -51,6 +51,10 @@ public class ApiKeyService {
     public void revoke(String keyId) {
         var clientKey = keys.findByKeyId(keyId).orElseThrow(ApiKeyNotFoundException::new);
         clientKey.revoke(clock);
+    }
+
+    private static void compareAgainstUnusedHashToKeepTimingConstant(ApiKey key) {
+        ApiClientKey.hashesEqual(UNUSED_HASH, key.hash());
     }
 
     public record IssuedApiKey(ApiKey key, String ownerId, Role role) {

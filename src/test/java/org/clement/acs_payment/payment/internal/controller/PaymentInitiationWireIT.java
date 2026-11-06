@@ -25,6 +25,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -49,6 +50,9 @@ class PaymentInitiationWireIT {
     @Autowired
     MockMvc mvc;
 
+    @Autowired
+    JdbcTemplate jdbc;
+
     @Test
     void initiatesPaymentThroughRealPaystackClient(CapturedOutput output) throws Exception {
         var reference = "PAY-" + UUID.randomUUID();
@@ -60,7 +64,7 @@ class PaymentInitiationWireIT {
                          "data":{"authorization_url":"https://checkout.paystack.com/wire","access_code":"wire-code","reference":"%s"}}
                         """.formatted(reference))));
 
-        mvc.perform(MockMvcRequestBuilders.post("/api/v1/payments")
+        mvc.perform(MockMvcRequestBuilders.post("/api/v1/payments/initiate")
                         .with(authentication(UsernamePasswordAuthenticationToken.authenticated(
                                 new ApiClient("client-a", Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")))))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -77,5 +81,6 @@ class PaymentInitiationWireIT {
                         {"email":"jane@example.com","amount":15000,"currency":"GHS","reference":"%s"}
                         """.formatted(reference))));
         assertThat(output.getAll()).doesNotContain("do-not-log").doesNotContain("wire-code").doesNotContain("sk_test_dummy");
+        assertThat(jdbc.queryForObject("select count(*) from information_schema.columns where table_name = 'payment' and column_name = 'access_code'", Long.class)).isZero();
     }
 }

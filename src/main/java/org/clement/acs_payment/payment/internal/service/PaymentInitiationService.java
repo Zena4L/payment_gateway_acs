@@ -13,7 +13,6 @@ import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.InitializationResult;
 import org.clement.acs_payment.paystack.InitializeTransaction;
 import org.clement.acs_payment.paystack.PaystackGateway;
-import org.clement.acs_payment.paystack.RejectionReason;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -47,7 +46,7 @@ public class PaymentInitiationService {
                 .build());
         var updated = writer.applyInitialization(created.getId(), result);
         return switch (result) {
-            case InitializationResult.Rejected(var reason, _) when reason != RejectionReason.DUPLICATE_REFERENCE ->
+            case InitializationResult.Rejected rejected when !rejected.alreadyKnownToProvider() ->
                     throw new ProviderRejectedException();
             case InitializationResult.Unavailable() -> throw new ProviderUnavailableException();
             default -> PaymentInitiation.created(updated);
