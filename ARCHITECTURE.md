@@ -19,7 +19,7 @@ Starting a payment doesn't mean the customer has paid. When a client starts a pa
 - **Payment Service**: the core. It handles client and admin requests, calls the provider, listens for events, and is the only thing that changes a payment's status. One writer means the rules live in one place.
 - **Webhook Ingestion**: receives webhooks, checks the signature, saves the event, publishes it and replies. No business logic, so it's fast.
 - **Application events**: there's no separate message queue. Modules talk through Spring Modulith application events, and the Payment Service listens for them after the publishing transaction commits.
-- **Reconciler**: a scheduled job that finds payments stuck too long and publishes a recheck event for each.
+- **Reconciler**: a scheduled job that claims payments stuck too long, in small batches, and re-verifies them one at a time through the same rules as verify and webhooks.
 - **Payment Store**: Postgres. It keeps payments, webhook events, every status change, and Spring Modulith's event publication log.
 
 ## How they talk
@@ -31,8 +31,8 @@ Starting a payment doesn't mean the customer has paid. When a client starts a pa
 | Payment Service | Payment Provider | Sync | I need the response straight away. |
 | Payment Provider | Webhook Ingestion | Async callback | The provider pushes results, possibly more than once. |
 | Webhook Ingestion | Payment Service | Application event | So I can reply to the provider fast and process the event after commit. |
-| Reconciler | Payment Store | Read | To find stuck payments. |
-| Reconciler | Payment Service | Application event | Rechecks take the same path as webhooks. |
+| Reconciler | Payment Service | Sync call | One recheck at a time, so Paystack's rate limits are respected. |
+| Payment Service | Payment Store | Claim | Stuck payments are claimed with `FOR UPDATE SKIP LOCKED`, so overlapping runs never pick the same row. |
 | Payment Service | Payment Store | Read/write | It's the only writer. |
 | Client App | Customer | Redirect | Sends the customer to the checkout page. |
 
@@ -40,7 +40,7 @@ Starting a payment doesn't mean the customer has paid. When a client starts a pa
 
 Spring Modulith application events run inside the app, so there's no broker to run. The catch is that a plain in-memory event is lost if the app crashes before the listener finishes.
 
-When an event has to survive that, I use the outbox pattern on Postgres. Spring Modulith's event publication registry writes the event to a table in the same transaction as the state change. The listener runs after commit, and the entry is only marked complete when the listener succeeds. Anything left incomplete gets resubmitted on a schedule. I use this for webhook events and reconciler rechecks, since losing either means a payment's status could go stale.
+When an event has to survive that, I use the outbox pattern on Postgres. Spring Modulith's event publication registry writes the event to a table in the same transaction as the state change. The listener runs after commit, and the entry is only marked complete when the listener succeeds. Anything left incomplete is republished when the app restarts. I use this for webhook events, since losing one means a payment's status could go stale.
 
 ## Main flows
 
@@ -67,9 +67,12 @@ When an event has to survive that, I use the outbox pattern on Postgres. Spring 
 
 ### Reconciliation
 
-1. On a schedule, I look for `INITIALIZING`, `PENDING` or `UNKNOWN` payments older than a threshold.
-2. I publish a recheck event for each. It's handled like any other event.
-3. Anything still unresolved after the final cutoff becomes `EXPIRED`.
+1. On a schedule, I claim a batch of `INITIALIZING`, `PENDING` or `UNKNOWN` payments that haven't changed for longer than a threshold. Claiming uses `FOR UPDATE SKIP LOCKED` and stamps each row, so a second instance or the next run doesn't take the same ones.
+2. I verify them with Paystack one at a time and apply the answer with the same rules as verify and webhooks. If Paystack is unavailable, I stop and leave the rest for the next run.
+3. A stuck `INITIALIZING` payment that Paystack never heard of becomes `FAILED`. One Paystack did create moves to `PENDING` and then follows Paystack's status.
+4. Anything still unresolved after the final cutoff becomes `EXPIRED`.
+
+I chose a plain sequential job over one event per payment: it respects rate limits without extra machinery, and if it crashes, unprocessed payments are still stuck, so the next run picks them up.
 
 ### Resolving a review
 
@@ -137,7 +140,7 @@ Allowed moves:
 - **Security.** API key auth for clients, separate keys with the admin role for the admin endpoint, signed webhooks. API keys are stored hashed. Secrets live in env config and never in code, logs or responses. No card data stored.
 - **Performance.** Reads under 200ms at p95. Webhooks acknowledged under 500ms.
 - **Scalability.** The service is stateless, so I can add instances. The database keeps them consistent.
-- **Recovery.** The Reconciler runs every 15 minutes and expires payments after 24 hours. Incomplete outbox entries get resubmitted.
+- **Recovery.** The Reconciler runs every 15 minutes and expires payments after 24 hours. Incomplete outbox entries are republished on restart.
 - **Observability.** Structured logs with a correlation ID, metrics on outcomes and provider health, alerts. Personal data is masked.
 
 The brief didn't give numbers, so I picked these as starting points.
@@ -155,8 +158,8 @@ The brief didn't give numbers, so I picked these as starting points.
 
 ## Open questions
 
-1. **Running the Reconciler and outbox resubmission on several instances?** Either a lock so one instance runs them, or row claiming so they share the work.
-2. **Should verifying a final payment still call the provider?** Returning what I have is faster and avoids rate limits. Calling again would catch rare cases like reversals.
+1. **Outbox republishing on several instances?** The Reconciler already shares work safely through row claiming. Republishing incomplete events on restart would need a lock so only one instance does it.
+2. **Should verifying a final payment still call the provider?** Decided: no. I return what I have, which is faster and avoids rate limits. The trade-off is that rare cases like reversals aren't caught.
 
 ## Out of scope
 

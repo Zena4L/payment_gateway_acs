@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProviderOutcomeWriter {
 
     private static final String NOT_FOUND_AT_PROVIDER = "Transaction not found at provider";
+    private static final String NEVER_REACHED_PROVIDER = "Initialization never reached the provider";
 
     private final PaymentRepository payments;
     private final ApplicationEventPublisher publisher;
@@ -62,6 +63,20 @@ public class ProviderOutcomeWriter {
     }
 
     @Transactional
+    public Payment failNeverInitialized(UUID paymentId) {
+        var payment = payments.findById(paymentId).orElseThrow();
+        payment.markFailed(NEVER_REACHED_PROVIDER, TransitionTrigger.RECONCILER, clock);
+        return payments.save(payment);
+    }
+
+    @Transactional
+    public void expire(UUID paymentId) {
+        var payment = payments.findById(paymentId).orElseThrow();
+        payment.transitionTo(PaymentStatus.EXPIRED, TransitionTrigger.RECONCILER, clock);
+        payments.save(payment);
+    }
+
+    @Transactional
     public void reportOutcome(UUID webhookEventId, ProcessingOutcome outcome, String diagnostic) {
         report(webhookEventId, outcome, diagnostic);
     }
@@ -80,6 +95,9 @@ public class ProviderOutcomeWriter {
     }
 
     private TransitionResult applyTransaction(Payment payment, ProviderTransaction transaction, TransitionTrigger trigger) {
+        if (payment.getStatus() == PaymentStatus.INITIALIZING) {
+            payment.transitionTo(PaymentStatus.PENDING, trigger, clock);
+        }
         if (!payment.matchesProviderRecord(transaction.reference(), transaction.amountMinor(), transaction.currency())) {
             log.warn("Provider data mismatch for reference {}: expected reference={} amountMinor={} currency={}, actual reference={} amountMinor={} currency={}",
                     payment.getReference(),

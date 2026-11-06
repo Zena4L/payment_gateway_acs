@@ -90,6 +90,7 @@ acs:
   payment:
     supported-currencies: GHS
   reconciliation:
+    enabled: true
     interval: 15m
     stale-threshold: 15m
     expiry-cutoff: 24h
