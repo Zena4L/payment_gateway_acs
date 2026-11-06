@@ -30,6 +30,14 @@
       "value": ""
     },
     {
+      "key": "paymentAmountMinor",
+      "value": ""
+    },
+    {
+      "key": "paymentCurrency",
+      "value": ""
+    },
+    {
       "key": "transactionId",
       "value": ""
     },
@@ -303,7 +311,9 @@
                   "    pm.expect(payment.status).to.eql('PENDING');",
                   "    pm.expect(payment.authorizationUrl).to.match(/^https:\\/\\/checkout\\.paystack\\.com\\//);",
                   "});",
-                  "pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);"
+                  "pm.collectionVariables.set('authorizationUrl', payment.authorizationUrl);",
+                  "pm.collectionVariables.set('paymentAmountMinor', Math.round(Number(payment.amount) * 100));",
+                  "pm.collectionVariables.set('paymentCurrency', payment.currency);"
                 ]
               }
             }
@@ -594,9 +604,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "// Match the amount and currency of the payment created by 'Initiate payment'",
+                  "const amount = Number(pm.collectionVariables.get('paymentAmountMinor')) || 15000;",
+                  "const currency = pm.collectionVariables.get('paymentCurrency') || 'GHS';",
                   "const payload = {",
                   "    event: 'charge.success',",
-                  "    data: { id: Date.now(), status: 'success', reference: pm.collectionVariables.get('reference'), amount: 15000, currency: 'GHS' }",
+                  "    data: { id: Date.now(), status: 'success', reference: pm.collectionVariables.get('reference'), amount: amount, currency: currency }",
                   "};",
                   "const body = JSON.stringify(payload);",
                   "pm.collectionVariables.set('webhookBody', body);",

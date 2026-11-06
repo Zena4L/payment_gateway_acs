@@ -1,8 +1,11 @@
 ### charge.success, signed like Paystack
 < {%
+    // Match the amount and currency of the payment created by "Initiate a payment"
+    const amount = Number(client.global.get("paymentAmountMinor")) || 15000;
+    const currency = client.global.get("paymentCurrency") || "GHS";
     const body = JSON.stringify({
         event: "charge.success",
-        data: { id: Date.now(), status: "success", reference: client.global.get("reference"), amount: 15000, currency: "GHS" }
+        data: { id: Date.now(), status: "success", reference: client.global.get("reference"), amount: amount, currency: currency }
     });
     client.global.set("webhookBody", body);
     client.global.set("webhookSignature",

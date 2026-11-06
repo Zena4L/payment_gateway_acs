@@ -25,6 +25,8 @@ Content-Type: application/json
         client.assert(response.body.authorizationUrl.startsWith("https://checkout.paystack.com/"), "expected a Paystack link");
     });
     client.global.set("authorizationUrl", response.body.authorizationUrl);
+    client.global.set("paymentAmountMinor", String(Math.round(Number(response.body.amount) * 100)));
+    client.global.set("paymentCurrency", response.body.currency);
 %}
 
 ### Replay the identical request

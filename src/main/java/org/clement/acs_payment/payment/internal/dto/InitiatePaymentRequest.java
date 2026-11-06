@@ -14,7 +14,13 @@ public record InitiatePaymentRequest(
         @NotBlank @Email @Size(max = 254) String email,
         @NotNull @Positive @Digits(integer = 16, fraction = 2) BigDecimal amount,
         @NotBlank @Pattern(regexp = "[A-Z]{3}") String currency,
-        @NotBlank @Size(max = 64) @Pattern(regexp = "[A-Za-z0-9._-]+") String reference) {
+        @NotBlank(message = "reference is required")
+        @Size(max = 64, message = "reference must be at most 64 characters long")
+        @Pattern(regexp = "[A-Za-z0-9._-]+", message = REFERENCE_CHARACTERS) String reference) {
+
+    public static final String REFERENCE_CHARACTERS = "reference may only contain letters (A-Z, a-z), digits (0-9), "
+            + "dots (.), underscores (_) and hyphens (-); spaces and other characters are not allowed, for example use "
+            + "'test-demo' instead of 'test demo'";
 
     public InitiatePaymentCommand toCommand(String ownerId) {
         return InitiatePaymentCommand.builder()

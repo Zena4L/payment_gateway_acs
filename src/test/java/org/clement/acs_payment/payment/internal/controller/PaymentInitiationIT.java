@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntFunction;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.dto.InitiatePaymentRequest;
 import org.clement.acs_payment.payment.internal.exception.PaymentConflictException;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
 import org.clement.acs_payment.payment.internal.model.PaymentTransition;
@@ -151,6 +152,15 @@ class PaymentInitiationIT {
 
         assertThat(payments.count()).isEqualTo(before);
         verify(paystack, never()).initialize(any());
+    }
+
+    @Test
+    void explainsWhichCharactersAReferenceMayContain() throws Exception {
+        initiate("client-a", body("test demo", "jane@example.com", "150.00", "GHS"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.length()").value(1))
+                .andExpect(jsonPath("$.errors[0].field").value("reference"))
+                .andExpect(jsonPath("$.errors[0].message").value(InitiatePaymentRequest.REFERENCE_CHARACTERS));
     }
 
     @Test
