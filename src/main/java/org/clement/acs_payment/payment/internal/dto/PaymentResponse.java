@@ -1,6 +1,7 @@
 package org.clement.acs_payment.payment.internal.dto;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import lombok.Builder;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -13,6 +14,8 @@ public record PaymentResponse(
         BigDecimal amount,
         String currency,
         @Nullable String authorizationUrl,
+        @Nullable String channel,
+        @Nullable Instant paidAt,
         String message) {
 
     public static PaymentResponse from(Payment payment) {
@@ -22,6 +25,8 @@ public record PaymentResponse(
                 .amount(payment.getAmount())
                 .currency(payment.getCurrency().getCurrencyCode())
                 .authorizationUrl(payment.getAuthorizationUrl())
+                .channel(payment.getChannel())
+                .paidAt(payment.getPaidAt())
                 .message(messageFor(payment.getStatus()))
                 .build();
     }
