@@ -1,6 +1,9 @@
 ### Initiate a payment to put under review
 < {%
     client.global.set("reviewReference", "IJ-REVIEW-" + Date.now());
+    if (!client.global.get("reviewEmail")) {
+        client.global.set("reviewEmail", "ij-review-" + Date.now() + "@example.com");
+    }
 %}
 POST {{baseUrl}}/api/v1/payments/initiate
 X-API-Key: {{clientKey}}
@@ -8,7 +11,7 @@ Content-Type: application/json
 
 {
   "reference": "{{reviewReference}}",
-  "email": "customer@example.com",
+  "email": "{{reviewEmail}}",
   "amount": 150.00,
   "currency": "GHS"
 }

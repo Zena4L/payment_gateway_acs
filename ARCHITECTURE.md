@@ -139,7 +139,7 @@ Up to 3 attempts with exponential backoff and jitter. If Paystack sends `Retry-A
 ## Non-functional requirements
 
 - **Correctness.** If I don't know the outcome, I say so. I don't guess.
-- **Idempotency.** Unique keys and versioning make repeats safe.
+- **Idempotency.** Unique keys and versioning make repeats safe. The same purchase sent again under a new reference within a short window is refused and pointed at the existing payment.
 - **Resilience.** Every outbound call has a timeout, only safe calls retry, there's a circuit breaker, and important events go through the outbox.
 - **Security.** API key auth for clients, separate keys with the admin role for the admin endpoint, signed webhooks. API keys are stored hashed. Secrets live in env config and never in code, logs or responses. No card data stored.
 - **Performance.** Reads under 200ms at p95. Webhooks acknowledged under 500ms.

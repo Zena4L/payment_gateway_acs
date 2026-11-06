@@ -64,6 +64,14 @@
     {
       "key": "reviewTransactionId",
       "value": ""
+    },
+    {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "reviewEmail",
+      "value": ""
     }
   ],
   "item": [
@@ -75,9 +83,22 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/actuator/health"
+            "url": "{{baseUrl}}/actuator/health",
+            "description": "Starts a new run: clears {{reference}} and picks fresh customer emails."
           },
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const run = Date.now();",
+                  "pm.collectionVariables.set('reference', '');",
+                  "pm.collectionVariables.set('customerEmail', 'pm-' + run + '@example.com');",
+                  "pm.collectionVariables.set('reviewEmail', 'pm-review-' + run + '@example.com');"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -246,13 +267,14 @@
             "url": "{{baseUrl}}/api/v1/payments/initiate",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"{{customerEmail}}\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            }
+            },
+            "description": "Reuses {{reference}} until the next run; run Health to start a new one."
           },
           "event": [
             {
@@ -260,7 +282,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.collectionVariables.set('reference', 'PM-' + Date.now());"
+                  "if (!pm.collectionVariables.get('reference')) {",
+                  "    pm.collectionVariables.set('reference', 'PM-' + Date.now());",
+                  "}",
+                  "if (!pm.collectionVariables.get('customerEmail')) {",
+                  "    pm.collectionVariables.set('customerEmail', 'pm-' + Date.now() + '@example.com');",
+                  "}"
                 ]
               }
             },
@@ -299,7 +326,7 @@
             "url": "{{baseUrl}}/api/v1/payments/initiate",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"{{customerEmail}}\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -315,6 +342,49 @@
                 "exec": [
                   "pm.test('status is 200', () => pm.response.to.have.status(200));",
                   "pm.test('same checkout link', () => pm.expect(pm.response.json().authorizationUrl).to.eql(pm.collectionVariables.get('authorizationUrl')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same details, new reference",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{clientKey}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/payments/initiate",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"{{reference}}-B\",\n  \"email\": \"{{customerEmail}}\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 409', () => pm.response.to.have.status(409));",
+                  "const problem = pm.response.json();",
+                  "pm.test('points to the existing payment', () => {",
+                  "    pm.expect(problem.code).to.eql('duplicate-payment');",
+                  "    pm.expect(problem.existingReference).to.eql(pm.collectionVariables.get('reference'));",
+                  "    pm.expect(problem.existingTransactionId).to.be.a('string');",
+                  "});"
                 ]
               }
             }
@@ -337,7 +407,7 @@
             "url": "{{baseUrl}}/api/v1/payments/initiate",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 200.00,\n  \"currency\": \"GHS\"\n}",
+              "raw": "{\n  \"reference\": \"{{reference}}\",\n  \"email\": \"{{customerEmail}}\",\n  \"amount\": 200.00,\n  \"currency\": \"GHS\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -691,7 +761,7 @@
             "url": "{{baseUrl}}/api/v1/payments/initiate",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference\": \"{{reviewReference}}\",\n  \"email\": \"customer@example.com\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
+              "raw": "{\n  \"reference\": \"{{reviewReference}}\",\n  \"email\": \"{{reviewEmail}}\",\n  \"amount\": 150.00,\n  \"currency\": \"GHS\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -705,7 +775,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.collectionVariables.set('reviewReference', 'PM-REVIEW-' + Date.now());"
+                  "pm.collectionVariables.set('reviewReference', 'PM-REVIEW-' + Date.now());",
+                  "if (!pm.collectionVariables.get('reviewEmail')) {",
+                  "    pm.collectionVariables.set('reviewEmail', 'pm-review-' + Date.now() + '@example.com');",
+                  "}"
                 ]
               }
             },

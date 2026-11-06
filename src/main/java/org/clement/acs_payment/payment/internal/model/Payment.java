@@ -106,6 +106,10 @@ public class Payment {
                 && this.amount.compareTo(money.amount()) == 0;
     }
 
+    public String intentKey() {
+        return String.join("|", ownerId, email, Long.toString(amountMinor), currency.getCurrencyCode());
+    }
+
     public TransitionResult markInitialized(String authorizationUrl, Clock clock) {
         var result = transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, clock);
         if (result == TransitionResult.APPLIED) {

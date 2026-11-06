@@ -1,4 +1,10 @@
-### Health
+### Health (starts a new run: clears the reference and picks fresh customer emails)
+< {%
+    const run = Date.now();
+    client.global.set("reference", "");
+    client.global.set("customerEmail", "ij-" + run + "@example.com");
+    client.global.set("reviewEmail", "ij-review-" + run + "@example.com");
+%}
 GET {{baseUrl}}/actuator/health
 
 > {%
