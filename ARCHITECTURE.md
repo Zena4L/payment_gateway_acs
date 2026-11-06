@@ -113,11 +113,13 @@ Allowed moves:
 
 | Call | Failure | Retry? |
 |---|---|---|
-| Verify | Timeout, 429, 500, 503 | Yes, with backoff |
-| Initialize | 429, 503 | Yes, with backoff (never processed) |
-| Initialize | Timeout, 500 | No. Mark `UNKNOWN`, verify later |
-| Initialize | 400, 401 | No. It'll fail again |
+| Verify | Timeout, connection failure, 429, 500, 502, 503, 504, malformed body | Yes, with backoff |
+| Initialize | 429, 503, connection refused | Yes, with backoff (never processed) |
+| Initialize | Timeout, 500, other 5xx | No. Mark `UNKNOWN`, verify later |
+| Any | 400, 401 | No. It'll fail again |
 | Any | Circuit breaker open | No. Fail fast |
+
+Up to 3 attempts with exponential backoff and jitter. If Paystack sends `Retry-After`, I wait that long instead, up to a cap.
 
 ## When things go wrong
 
