@@ -95,7 +95,7 @@ public class Payment {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        payment.record(null, PaymentStatus.INITIALIZING, TransitionTrigger.INITIATE, now);
+        payment.record(null, PaymentStatus.INITIALIZING, TransitionTrigger.INITIATE, now, null, null);
         return payment;
     }
 
@@ -166,11 +166,14 @@ public class Payment {
         return TransitionResult.APPLIED;
     }
 
-    public void resolveReview(PaymentStatus outcome, Clock clock) {
+    public void resolveReview(PaymentStatus outcome, String actor, String reason, Clock clock) {
         if (status != PaymentStatus.REQUIRES_REVIEW || !status.canMoveTo(outcome)) {
             throw new InvalidTransitionException(status, outcome);
         }
-        apply(outcome, TransitionTrigger.ADMIN, clock);
+        var now = clock.instant();
+        record(status, outcome, TransitionTrigger.ADMIN, now, actor, reason);
+        status = outcome;
+        updatedAt = now;
     }
 
     @DomainEvents
@@ -185,7 +188,7 @@ public class Payment {
 
     private void apply(PaymentStatus next, TransitionTrigger trigger, Clock clock) {
         var now = clock.instant();
-        record(status, next, trigger, now);
+        record(status, next, trigger, now, null, null);
         status = next;
         updatedAt = now;
     }
@@ -206,13 +209,16 @@ public class Payment {
         return text.length() > MAX_GATEWAY_RESPONSE ? text.substring(0, MAX_GATEWAY_RESPONSE) : text;
     }
 
-    private void record(@Nullable PaymentStatus from, PaymentStatus to, TransitionTrigger trigger, Instant at) {
+    private void record(@Nullable PaymentStatus from, PaymentStatus to, TransitionTrigger trigger, Instant at,
+                        @Nullable String actor, @Nullable String reason) {
         pendingTransitions.add(PaymentTransitioned.builder()
                 .paymentId(id)
                 .from(from)
                 .to(to)
                 .trigger(trigger)
                 .occurredAt(at)
+                .actor(actor)
+                .reason(reason)
                 .build());
     }
 }

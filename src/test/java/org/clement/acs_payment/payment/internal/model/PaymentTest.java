@@ -108,19 +108,19 @@ class PaymentTest {
     void resolvesReviewThroughExplicitAdminAction() {
         var payment = paymentInReview();
 
-        payment.resolveReview(PaymentStatus.SUCCESS, LATER_CLOCK);
+        payment.resolveReview(PaymentStatus.SUCCESS, "ops-admin", "Customer bank confirmed the transfer", LATER_CLOCK);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(payment.pendingTransitions()).last()
-                .extracting(PaymentTransitioned::trigger)
-                .isEqualTo(TransitionTrigger.ADMIN);
+                .extracting(PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::reason)
+                .containsExactly(TransitionTrigger.ADMIN, "ops-admin", "Customer bank confirmed the transfer");
     }
 
     @Test
     void refusesReviewResolutionWhenNotInReview() {
         var payment = pendingPayment();
 
-        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.SUCCESS, LATER_CLOCK))
+        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.SUCCESS, "ops-admin", "reason", LATER_CLOCK))
                 .isInstanceOf(InvalidTransitionException.class);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
     }
@@ -129,7 +129,7 @@ class PaymentTest {
     void refusesReviewResolutionToNonFinalOutcome() {
         var payment = paymentInReview();
 
-        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.PENDING, LATER_CLOCK))
+        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.PENDING, "ops-admin", "reason", LATER_CLOCK))
                 .isInstanceOf(InvalidTransitionException.class);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUIRES_REVIEW);
     }

@@ -39,6 +39,10 @@ public class PaymentTransition {
 
     private Instant occurredAt;
 
+    private @Nullable String actor;
+
+    private @Nullable String reason;
+
     public static PaymentTransition from(PaymentTransitioned event) {
         return PaymentTransition.builder()
                 .id(UuidV7.next())
@@ -47,6 +51,8 @@ public class PaymentTransition {
                 .toStatus(event.to())
                 .triggeredBy(event.trigger())
                 .occurredAt(event.occurredAt())
+                .actor(event.actor())
+                .reason(event.reason())
                 .build();
     }
 }

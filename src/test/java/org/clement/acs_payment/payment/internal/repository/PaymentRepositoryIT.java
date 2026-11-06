@@ -148,6 +148,30 @@ class PaymentRepositoryIT {
         assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(payment.getId())).isEmpty();
     }
 
+    @Test
+    void requiresActorAndReasonOnAdminTransitions() {
+        var saved = payments.save(newPayment(uniqueReference()));
+
+        assertThatThrownBy(() -> jdbc.update("""
+                insert into payment_transition (id, payment_id, from_status, to_status, triggered_by, occurred_at)
+                values (?, ?, 'REQUIRES_REVIEW', 'SUCCESS', 'ADMIN', now())
+                """, UUID.randomUUID(), saved.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_transition_admin_details");
+    }
+
+    @Test
+    void allowsSystemTransitionsWithoutActorOrReason() {
+        var saved = payments.save(newPayment(uniqueReference()));
+
+        var inserted = new TransactionTemplate(transactionManager).execute(status -> jdbc.update("""
+                insert into payment_transition (id, payment_id, from_status, to_status, triggered_by, occurred_at)
+                values (?, ?, 'INITIALIZING', 'PENDING', 'INITIATE', now())
+                """, UUID.randomUUID(), saved.getId()));
+
+        assertThat(inserted).isEqualTo(1);
+    }
+
     private static Payment newPayment(String reference) {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
         return Payment.initialize(reference, "client-a", "jane@example.com", money, CLOCK);

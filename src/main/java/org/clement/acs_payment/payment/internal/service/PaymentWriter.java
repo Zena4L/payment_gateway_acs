@@ -3,6 +3,7 @@ package org.clement.acs_payment.payment.internal.service;
 import java.time.Clock;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.clement.acs_payment.payment.internal.exception.PaymentNotFoundException;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.TransitionTrigger;
@@ -23,6 +24,13 @@ public class PaymentWriter {
     @Transactional
     public Payment create(InitiatePaymentCommand command, Money money) {
         return payments.saveAndFlush(Payment.initialize(command.reference(), command.ownerId(), command.email(), money, clock));
+    }
+
+    @Transactional
+    public Payment resolveReview(UUID paymentId, ResolutionOutcome outcome, String actor, String reason) {
+        var payment = payments.findById(paymentId).orElseThrow(PaymentNotFoundException::new);
+        payment.resolveReview(outcome.getStatus(), actor, reason, clock);
+        return payments.save(payment);
     }
 
     @Transactional

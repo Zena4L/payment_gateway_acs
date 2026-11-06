@@ -76,8 +76,10 @@ I chose a plain sequential job over one event per payment: it respects rate limi
 
 ### Resolving a review
 
-1. An admin calls the admin endpoint with the payment reference and the outcome (`SUCCESS` or `FAILED`), plus a reason.
-2. I check the payment is in `REQUIRES_REVIEW`, apply the change, and record who made it and why in the status history.
+1. An admin finds payments waiting for a decision with `GET /api/v1/payments?status=REQUIRES_REVIEW`, and sees why each one went into review with `GET /api/v1/admin/payments/{transactionId}/transitions`.
+2. They call `POST /api/v1/admin/payments/{transactionId}/resolution` with the outcome (`SUCCESS` or `FAILED`) and a reason.
+3. I check the payment is in `REQUIRES_REVIEW`, apply the change, and record who made it (the admin key's owner) and why in the status history. The database refuses an admin step that has no actor or reason.
+4. If two admins decide at the same moment, optimistic locking lets the first one win, and the second gets a 409.
 
 ## Payment states
 

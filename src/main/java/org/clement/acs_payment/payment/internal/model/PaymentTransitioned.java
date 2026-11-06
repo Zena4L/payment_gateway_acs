@@ -11,5 +11,7 @@ public record PaymentTransitioned(
         @Nullable PaymentStatus from,
         PaymentStatus to,
         TransitionTrigger trigger,
-        Instant occurredAt) {
+        Instant occurredAt,
+        @Nullable String actor,
+        @Nullable String reason) {
 }
