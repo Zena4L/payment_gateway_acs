@@ -1,6 +1,11 @@
-### Initiate a payment
+### Initiate a payment (reuses the reference until Health starts a new run)
 < {%
-    client.global.set("reference", "IJ-" + Date.now());
+    if (!client.global.get("reference")) {
+        client.global.set("reference", "IJ-" + Date.now());
+    }
+    if (!client.global.get("customerEmail")) {
+        client.global.set("customerEmail", "ij-" + Date.now() + "@example.com");
+    }
 %}
 POST {{baseUrl}}/api/v1/payments/initiate
 X-API-Key: {{clientKey}}
@@ -8,7 +13,7 @@ Content-Type: application/json
 
 {
   "reference": "{{reference}}",
-  "email": "customer@example.com",
+  "email": "{{customerEmail}}",
   "amount": 150.00,
   "currency": "GHS"
 }
@@ -29,7 +34,7 @@ Content-Type: application/json
 
 {
   "reference": "{{reference}}",
-  "email": "customer@example.com",
+  "email": "{{customerEmail}}",
   "amount": 150.00,
   "currency": "GHS"
 }
@@ -41,6 +46,26 @@ Content-Type: application/json
     });
 %}
 
+### Same details, new reference (blocked as a duplicate)
+POST {{baseUrl}}/api/v1/payments/initiate
+X-API-Key: {{clientKey}}
+Content-Type: application/json
+
+{
+  "reference": "{{reference}}-B",
+  "email": "{{customerEmail}}",
+  "amount": 150.00,
+  "currency": "GHS"
+}
+
+> {%
+    client.test("duplicate points to the existing payment", () => {
+        client.assert(response.status === 409, "expected 409");
+        client.assert(response.body.code === "duplicate-payment", "expected duplicate-payment");
+        client.assert(response.body.existingReference === client.global.get("reference"), "expected the existing reference");
+    });
+%}
+
 ### Reuse the reference with a different amount
 POST {{baseUrl}}/api/v1/payments/initiate
 X-API-Key: {{clientKey}}
@@ -48,7 +73,7 @@ Content-Type: application/json
 
 {
   "reference": "{{reference}}",
-  "email": "customer@example.com",
+  "email": "{{customerEmail}}",
   "amount": 200.00,
   "currency": "GHS"
 }

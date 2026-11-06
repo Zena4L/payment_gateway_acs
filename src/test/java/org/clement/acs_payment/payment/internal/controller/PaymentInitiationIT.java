@@ -179,6 +179,18 @@ class PaymentInitiationIT {
         verify(paystack, times(1)).initialize(any());
     }
 
+    @Test
+    void allowsSameDetailsUnderNewReferenceWhenDuplicateWindowIsZero() throws Exception {
+        var email = "guard-off-" + UUID.randomUUID() + "@example.com";
+        when(paystack.initialize(any())).thenReturn(INITIALIZED);
+
+        initiate("client-a", body(uniqueReference(), email, "150.00", "GHS")).andExpect(status().isCreated());
+        initiate("client-a", body(uniqueReference(), email, "150.00", "GHS")).andExpect(status().isCreated());
+
+        assertThat(jdbc.queryForObject("select count(*) from payment where email = ?", Long.class, email)).isEqualTo(2L);
+        verify(paystack, times(2)).initialize(any());
+    }
+
     @ParameterizedTest(name = "{0}")
     @CsvSource(delimiter = '|', value = {
             "different amount   | client-a | jane@example.com | 200.00",

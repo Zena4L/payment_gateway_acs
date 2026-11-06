@@ -1,14 +1,20 @@
 package org.clement.acs_payment.payment.internal.service;
 
 import java.time.Clock;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.clement.acs_payment.payment.internal.config.PaymentProperties;
+import org.clement.acs_payment.payment.internal.exception.DuplicatePaymentException;
 import org.clement.acs_payment.payment.internal.exception.PaymentNotFoundException;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
+import org.clement.acs_payment.payment.internal.model.PaymentStatus;
 import org.clement.acs_payment.payment.internal.model.TransitionTrigger;
 import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.InitializationResult;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +23,17 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentWriter {
 
     private static final String PROVIDER_UNAVAILABLE = "Payment provider unavailable";
+    private static final Set<PaymentStatus> CLOSED_UNPAID = EnumSet.of(PaymentStatus.FAILED, PaymentStatus.EXPIRED);
 
     private final PaymentRepository payments;
+    private final PaymentProperties properties;
     private final Clock clock;
 
     @Transactional
     public Payment create(InitiatePaymentCommand command, Money money) {
-        return payments.saveAndFlush(Payment.initialize(command.reference(), command.ownerId(), command.email(), money, clock));
+        var payment = Payment.initialize(command.reference(), command.ownerId(), command.email(), money, clock);
+        rejectLiveDuplicate(payment);
+        return payments.saveAndFlush(payment);
     }
 
     @Transactional
@@ -49,5 +59,20 @@ public class PaymentWriter {
                     payment.markOutcomeUnknown(clock);
         }
         return payments.save(payment);
+    }
+
+    private void rejectLiveDuplicate(Payment payment) {
+        var window = properties.duplicateWindow();
+        if (window.isZero()) {
+            return;
+        }
+        payments.lockIntent(payment.intentKey());
+        payments.findLiveDuplicates(payment.getOwnerId(), payment.getEmail(), payment.getAmountMinor(), payment.getCurrency(),
+                        payment.getReference(), payment.getCreatedAt().minus(window), CLOSED_UNPAID, PageRequest.of(0, 1))
+                .stream()
+                .findFirst()
+                .ifPresent(existing -> {
+                    throw new DuplicatePaymentException(existing.getReference(), existing.getId());
+                });
     }
 }

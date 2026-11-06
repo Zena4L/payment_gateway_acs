@@ -43,7 +43,10 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ApiException.class)
     @Nullable
     ResponseEntity<Object> handleApiException(ApiException ex, WebRequest request) {
-        return problem(ex, ex.getStatus(), ex.getCode(), ex.getMessage(), request);
+        var problem = ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());
+        problem.setProperty("code", ex.getCode());
+        ex.getProperties().forEach(problem::setProperty);
+        return handleExceptionInternal(ex, problem, new HttpHeaders(), ex.getStatus(), request);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)

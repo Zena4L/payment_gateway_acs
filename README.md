@@ -150,6 +150,7 @@ curl -s -X POST localhost:8080/api/v1/payments/initiate -H "X-API-Key: $KEY" \
 
 # same request again -> 200, same payment (safe to retry)
 # same reference, different amount -> 409 payment-conflict
+# same details, new reference within 60s -> 409 duplicate-payment (with existingReference)
 
 curl -s localhost:8080/api/v1/payments/verify/PAY-2026-0001 -H "X-API-Key: $KEY"             # 200, current status
 curl -s "localhost:8080/api/v1/payments?status=PENDING&sort=amount&direction=asc" -H "X-API-Key: $KEY"
@@ -174,7 +175,7 @@ A successful initiation looks like this:
 
 `success` means the request worked. The `status` says whether money moved, and after initiation it never does.
 
-**Postman:** import `postman/acs-payment.postman_collection.json` and `postman/acs-payment.local.postman_environment.json`. In the environment, set `adminKey` (your bootstrap admin key) and `paystackSecret` (your `sk_test_` key, used to sign webhook requests the way Paystack does). Run the folders in order; each saves values the next uses. All 29 requests check their own responses.
+**Postman:** import `postman/acs-payment.postman_collection.json` and `postman/acs-payment.local.postman_environment.json`. In the environment, set `adminKey` (your bootstrap admin key) and `paystackSecret` (your `sk_test_` key, used to sign webhook requests the way Paystack does). Run the folders in order; each saves values the next uses. All 30 requests check their own responses. "Initiate payment" keeps the same reference until you run Health again, so re-sending it shows the replay and conflict answers instead of making a new payment.
 
 **IntelliJ HTTP Client:** copy `http/http-client.private.env.example.json` to `http/http-client.private.env.json` (gitignored), fill in the same two values, pick the `local` environment, and run `http/01` to `http/05` in order.
 
@@ -264,7 +265,7 @@ set -a; source .env; set +a      # exports ACS_PAYSTACK_SECRET_KEY
 |---|---|
 | Valid and invalid initiation; smallest-unit conversion | `PaymentInitiationIT`, `MoneyTest`, `PaymentInitiationWireIT` |
 | Provider success, failure, malformed response, timeout | `PaystackHttpGatewayIT` (asserts request counts per retry rule), `PaymentInitiationIT`, `PaymentVerificationIT` |
-| Repeated initiation and concurrent duplicates | `PaymentInitiationIT` (replay, conflict, 10-thread races) |
+| Repeated initiation and concurrent duplicates | `PaymentInitiationIT`, `DuplicatePaymentIT` (replay, conflict, duplicate purchase, concurrent bursts) |
 | Mismatched reference, amount, currency | `PaymentVerificationIT`, `PaystackWebhookIT` |
 | Webhook signatures, replay, out-of-order | `PaystackWebhookServiceTest`, `PaystackWebhookIT`, `WebhookEventRepositoryIT` |
 | Persistence, allowed transitions, access control | `PaymentRepositoryIT`, `PaymentStatusTest`, `PaymentTest`, `ApiKeyAuthenticationIT`, `PaymentQueryIT`, `PaymentReviewIT` |
@@ -288,6 +289,7 @@ Every setting can be overridden with an environment variable, for example `acs.r
 | `acs.paystack.retry.initial-backoff` | `500ms` | First backoff; doubles each time, with jitter |
 | `acs.paystack.retry.max-retry-after` | `5s` | Longest `Retry-After` I'll honour |
 | `acs.payment.supported-currencies` | `GHS` | Currency allow-list |
+| `acs.payment.duplicate-window` | `60s` | How long the same details under a new reference are treated as a duplicate (`0s` turns it off) |
 | `acs.reconciliation.enabled` | `true` | Turns the scheduled reconciler on or off |
 | `acs.reconciliation.interval` | `15m` | Pause between reconciler runs |
 | `acs.reconciliation.stale-threshold` | `15m` | How long a payment sits untouched before it's rechecked |
@@ -312,6 +314,7 @@ Every change is written to `payment_transition` (from, to, trigger, actor, reaso
 
 **Idempotency.**
 - **Initiation:** the client's `reference` is unique in the database. The same request again returns the existing payment (200). The same reference with different details returns 409. When requests race, the unique constraint lets exactly one through, and the others get the replay or conflict answer, never a 500.
+- **Duplicate purchases:** a new reference with the same client, email, amount and currency within 60 seconds of a live payment gets 409 `duplicate-payment`, pointing to the existing payment. A transaction-scoped Postgres advisory lock on those details makes the check and insert atomic, so racing requests still create one payment.
 - **Webhooks:** each delivery is stored. A partial unique index on `event:transactionId` lets one through and records the rest as `DUPLICATE`.
 - **Updates:** `@Version` optimistic locking. If two updates collide, the loser reloads and applies once more, which is then a no-op.
 
@@ -347,6 +350,7 @@ Up to 3 attempts, with exponential backoff and jitter. `Retry-After` is honoured
 ## Assumptions
 
 - The client supplies the payment reference. That's what makes retries safe.
+- The same client, email, amount and currency within 60 seconds of a live payment is an accidental repeat, not a second purchase.
 - Only GHS, through a configurable allow-list. One Paystack account.
 - Paystack's `abandoned` counts as still pending, because the customer can come back to the checkout.
 - The webhook dedup key is the event type plus Paystack's transaction ID.

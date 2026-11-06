@@ -282,6 +282,28 @@ class PaymentTest {
                 .build();
     }
 
+    @Test
+    void intentKeyIgnoresEmailCaseWhitespaceAndAmountScale() {
+        var original = paymentFor("PAY-1", "client-a", "jane@example.com", "150.00");
+        var equivalent = paymentFor("PAY-2", "client-a", "  Jane@Example.COM ", "150");
+
+        assertThat(equivalent.intentKey()).isEqualTo(original.intentKey()).isEqualTo("client-a|jane@example.com|15000|GHS");
+    }
+
+    @Test
+    void intentKeyDiffersForAnyOtherOwnerEmailOrAmount() {
+        var original = paymentFor("PAY-1", "client-a", "jane@example.com", "150.00");
+
+        assertThat(paymentFor("PAY-2", "client-a", "jane@example.com", "150.01").intentKey()).isNotEqualTo(original.intentKey());
+        assertThat(paymentFor("PAY-3", "client-b", "jane@example.com", "150.00").intentKey()).isNotEqualTo(original.intentKey());
+        assertThat(paymentFor("PAY-4", "client-a", "john@example.com", "150.00").intentKey()).isNotEqualTo(original.intentKey());
+    }
+
+    private static Payment paymentFor(String reference, String ownerId, String email, String amount) {
+        var money = new Money(new BigDecimal(amount), Currency.getInstance("GHS"));
+        return Payment.initialize(reference, ownerId, email, money, CREATED_CLOCK);
+    }
+
     private static Payment newPayment() {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
         return Payment.initialize("PAY-1", "client-a", "jane@example.com", money, CREATED_CLOCK);

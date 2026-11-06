@@ -3,6 +3,8 @@ acs:
     secret-key: sk_test_dummy
     retry:
       initial-backoff: 10ms
+  payment:
+    duplicate-window: 0s
   reconciliation:
     enabled: false
   security:

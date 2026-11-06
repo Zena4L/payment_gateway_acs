@@ -197,6 +197,22 @@ The groundwork the other epics build on: the payment record, its lifecycle rules
 - [x] Paystack `429` and `503` responses (requests that were definitely not processed) are retried with exponential backoff up to a limit, then reported as a standardized `503` error.
 - [x] The secret key, raw provider payloads and stack traces never appear in responses or logs.
 
+### US-1.8: Block a duplicate payment under a new reference
+*Traces to: FR-1.7*
+
+**As an** API client, **I want** a repeated purchase sent with a fresh reference to be caught, **so that** a double-click or a client retry that generates a new reference never gives the customer two checkout links to pay.
+
+**Acceptance criteria**
+- [x] Given a payment exists for the same client, email, amount and currency, created within the duplicate window (default 60 seconds, configurable) and not `FAILED` or `EXPIRED`, a request with a new reference returns `409 Conflict` with code `duplicate-payment` **(assumption)**.
+- [x] The error includes the existing payment's `existingReference` and `existingTransactionId` so the client can resume it.
+- [x] Nothing is saved for the rejected request and Paystack is not called.
+- [x] A `SUCCESS` or `REQUIRES_REVIEW` payment also blocks, so a paid purchase is not started again by accident.
+- [x] Once the earlier payment is `FAILED` or `EXPIRED`, or the window has passed, the same details are accepted.
+- [x] A different client, email or amount is never blocked.
+- [x] Concurrent requests with the same details and different references create exactly one payment and make one Paystack call; the others get `duplicate-payment`, never a `500`.
+- [x] Requests with the same reference keep the replay (US-1.3) and conflict (US-1.4) behaviour.
+- [x] A window of `0` turns the guard off.
+
 ---
 
 ## Epic 2: Payment verification
@@ -461,7 +477,7 @@ Work for the people who run the service, beyond the brief's tasks.
 | FR-1.4 | Persist before provider call | US-0.1, US-1.1, US-1.6, US-5.3 |
 | FR-1.5 | Call Paystack initialize, store URL | US-1.1 |
 | FR-1.6 | Return `PENDING`, never "paid" | US-1.1 |
-| FR-1.7 | Idempotent replay of identical request | US-0.1, US-1.3, US-1.5 |
+| FR-1.7 | Idempotent replay of identical request | US-0.1, US-1.3, US-1.5, US-1.8 |
 | FR-1.8 | Conflict on reference reuse with different payload | US-0.1, US-1.4, US-1.5 |
 | FR-1.9 | Ambiguous outcome → `UNKNOWN`, no blind retry | US-1.6, US-2.5 |
 | FR-1.10 | Controlled provider error mapping | US-1.7 |
@@ -510,6 +526,7 @@ These defaults resolve ambiguities in the brief and should be documented in the 
 7. **Verify on mismatch:** returns `200` with status `REQUIRES_REVIEW` rather than an error.
 8. **Ambiguous initiation response:** returns `202 Accepted` with status `UNKNOWN`.
 9. **Webhook confirmation:** success events are cross-checked with Paystack verify before marking `SUCCESS`.
+10. **Duplicate purchase under a new reference:** the same client, email, amount and currency within 60 seconds of a live payment is treated as an accidental repeat and rejected with `409 duplicate-payment`.
 
 ## Out of scope
 

@@ -89,6 +89,7 @@ acs:
       max-retry-after: 5s
   payment:
     supported-currencies: GHS
+    duplicate-window: 60s
   reconciliation:
     enabled: true
     interval: 15m
