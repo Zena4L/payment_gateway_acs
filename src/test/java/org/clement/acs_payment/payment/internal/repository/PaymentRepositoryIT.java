@@ -103,7 +103,8 @@ class PaymentRepositoryIT {
     void indexesFilteredAndOwnershipColumns() {
         var indexes = jdbc.queryForList("select indexname from pg_indexes where tablename = 'payment'", String.class);
 
-        assertThat(indexes).contains("uk_payment_reference", "ix_payment_owner_created", "ix_payment_status_created");
+        assertThat(indexes).contains("uk_payment_reference", "ix_payment_owner_created", "ix_payment_status_created",
+                "ix_payment_created", "ix_payment_owner_status_created");
     }
 
     @Test
