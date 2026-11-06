@@ -31,7 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
-/docs
+/docs/*
+!/docs/user-stories.md
 
 ### Environment ###
 .env

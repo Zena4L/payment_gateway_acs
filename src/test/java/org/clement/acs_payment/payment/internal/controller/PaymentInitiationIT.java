@@ -129,6 +129,7 @@ class PaymentInitiationIT {
             "negative amount        | jane@example.com  | -5.00   | GHS | REF   | amount",
             "missing amount         | jane@example.com  |         | GHS | REF   | amount",
             "three decimal places   | jane@example.com  | 150.005 | GHS | REF   | amount",
+            "too many whole digits  | jane@example.com  | 99999999999999999.99 | GHS | REF | amount",
             "malformed currency     | jane@example.com  | 150.00  | gh  | REF   | currency",
             "missing reference      | jane@example.com  | 150.00  | GHS | ''    | reference",
             "reference too long     | jane@example.com  | 150.00  | GHS | LONG  | reference",
