@@ -1,6 +1,7 @@
 package org.clement.acs_payment.payment.internal.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntFunction;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.dto.InitiatePaymentRequest;
 import org.clement.acs_payment.payment.internal.exception.PaymentConflictException;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -118,8 +120,10 @@ class PaymentInitiationIT {
         assertThat(payment.getOwnerId()).isEqualTo("client-a");
         assertThat(payment.getAmountMinor()).isEqualTo(15000L);
         assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(payment.getId()))
-                .extracting(PaymentTransition::getToStatus)
-                .containsExactly(PaymentStatus.INITIALIZING, PaymentStatus.PENDING);
+                .extracting(PaymentTransition::getToStatus, PaymentTransition::getActor, PaymentTransition::getActorKeyId)
+                .containsExactly(
+                        tuple(PaymentStatus.INITIALIZING, "client-a", TestActors.KEY_ID),
+                        tuple(PaymentStatus.PENDING, "client-a", TestActors.KEY_ID));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -346,7 +350,7 @@ class PaymentInitiationIT {
 
     private static UsernamePasswordAuthenticationToken asClient(String ownerId) {
         return UsernamePasswordAuthenticationToken.authenticated(
-                new ApiClient(ownerId, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
+                new ApiClient(ownerId, TestActors.KEY_ID, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
     }
 
     private static String body(String reference, String email, String amount, String currency) {
@@ -358,7 +362,7 @@ class PaymentInitiationIT {
 
     private static InitiatePaymentCommand command(String reference, String amount) {
         return InitiatePaymentCommand.builder()
-                .ownerId("client-a")
+                .initiator(TestActors.of("client-a"))
                 .reference(reference)
                 .email("jane@example.com")
                 .amount(new BigDecimal(amount))

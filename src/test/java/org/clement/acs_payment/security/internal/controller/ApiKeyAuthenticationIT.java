@@ -80,14 +80,16 @@ class ApiKeyAuthenticationIT {
     @Test
     void issuedKeyAuthenticatesAsItsClientWithoutExposingTheKey() throws Exception {
         var apiKey = issueKey("client-a", "CLIENT");
+        var parsed = ApiKey.parse(apiKey).orElseThrow();
 
         var body = mvc.perform(get("/test/whoami").header(ApiKeyAuthenticationFilter.HEADER, apiKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value("client-a"))
+                .andExpect(jsonPath("$.keyId").value(parsed.keyId()))
                 .andExpect(jsonPath("$.role").value("CLIENT"))
                 .andReturn().getResponse().getContentAsString();
 
-        assertThat(body).doesNotContain(apiKey);
+        assertThat(body).doesNotContain(apiKey).doesNotContain(parsed.secret());
     }
 
     @Test

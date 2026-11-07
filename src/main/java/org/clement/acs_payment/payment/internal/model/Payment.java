@@ -80,12 +80,12 @@ public class Payment {
     @Getter(AccessLevel.NONE)
     private final List<PaymentTransitioned> pendingTransitions = new ArrayList<>();
 
-    public static Payment initialize(String reference, String ownerId, String email, Money money, Clock clock) {
+    public static Payment initialize(String reference, Actor initiator, String email, Money money, Clock clock) {
         var now = clock.instant();
         var payment = Payment.builder()
                 .id(UuidV7.next())
                 .reference(reference)
-                .ownerId(ownerId)
+                .ownerId(initiator.ownerId())
                 .email(normalizeEmail(email))
                 .amount(money.amount())
                 .amountMinor(money.minorUnits())
@@ -95,7 +95,7 @@ public class Payment {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        payment.record(null, PaymentStatus.INITIALIZING, TransitionTrigger.INITIATE, now, null, null);
+        payment.record(null, PaymentStatus.INITIALIZING, TransitionCause.by(initiator, TransitionTrigger.INITIATE), now, null);
         return payment;
     }
 
@@ -110,44 +110,44 @@ public class Payment {
         return String.join("|", ownerId, email, Long.toString(amountMinor), currency.getCurrencyCode());
     }
 
-    public TransitionResult markInitialized(String authorizationUrl, Clock clock) {
-        var result = transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, clock);
+    public TransitionResult markInitialized(String authorizationUrl, Actor initiator, Clock clock) {
+        var result = transitionTo(PaymentStatus.PENDING, TransitionCause.by(initiator, TransitionTrigger.INITIATE), clock);
         if (result == TransitionResult.APPLIED) {
             this.authorizationUrl = authorizationUrl;
         }
         return result;
     }
 
-    public TransitionResult markOutcomeUnknown(Clock clock) {
-        return transitionTo(PaymentStatus.UNKNOWN, TransitionTrigger.INITIATE, clock);
+    public TransitionResult markOutcomeUnknown(Actor initiator, Clock clock) {
+        return transitionTo(PaymentStatus.UNKNOWN, TransitionCause.by(initiator, TransitionTrigger.INITIATE), clock);
     }
 
-    public TransitionResult markFailed(String reason, TransitionTrigger trigger, Clock clock) {
-        var result = transitionTo(PaymentStatus.FAILED, trigger, clock);
+    public TransitionResult markFailed(String reason, TransitionCause cause, Clock clock) {
+        var result = transitionTo(PaymentStatus.FAILED, cause, clock);
         if (result == TransitionResult.APPLIED) {
             this.gatewayResponse = truncate(reason);
         }
         return result;
     }
 
-    public TransitionResult markFailed(ProviderDetails details, TransitionTrigger trigger, Clock clock) {
-        var result = transitionTo(PaymentStatus.FAILED, trigger, clock);
+    public TransitionResult markFailed(ProviderDetails details, TransitionCause cause, Clock clock) {
+        var result = transitionTo(PaymentStatus.FAILED, cause, clock);
         if (result == TransitionResult.APPLIED) {
             recordProviderDetails(details);
         }
         return result;
     }
 
-    public TransitionResult markSucceeded(ProviderDetails details, TransitionTrigger trigger, Clock clock) {
-        var result = transitionTo(PaymentStatus.SUCCESS, trigger, clock);
+    public TransitionResult markSucceeded(ProviderDetails details, TransitionCause cause, Clock clock) {
+        var result = transitionTo(PaymentStatus.SUCCESS, cause, clock);
         if (result == TransitionResult.APPLIED) {
             recordProviderDetails(details);
         }
         return result;
     }
 
-    public TransitionResult flagForReview(TransitionTrigger trigger, Clock clock) {
-        return transitionTo(PaymentStatus.REQUIRES_REVIEW, trigger, clock);
+    public TransitionResult flagForReview(TransitionCause cause, Clock clock) {
+        return transitionTo(PaymentStatus.REQUIRES_REVIEW, cause, clock);
     }
 
     public boolean matchesProviderRecord(String reference, long amountMinor, String currencyCode) {
@@ -158,24 +158,24 @@ public class Payment {
         return this.amountMinor == amountMinor && this.currency.getCurrencyCode().equals(currencyCode);
     }
 
-    public TransitionResult transitionTo(PaymentStatus next, TransitionTrigger trigger, Clock clock) {
+    public TransitionResult transitionTo(PaymentStatus next, TransitionCause cause, Clock clock) {
         if (status == next) {
             return TransitionResult.NO_OP;
         }
         if (status == PaymentStatus.REQUIRES_REVIEW || !status.canMoveTo(next)) {
-            log.warn("Rejected payment transition {} -> {} for reference {} triggered by {}", status, next, reference, trigger);
+            log.warn("Rejected payment transition {} -> {} for reference {} triggered by {}", status, next, reference, cause.trigger());
             return TransitionResult.REJECTED;
         }
-        apply(next, trigger, clock);
+        apply(next, cause, clock);
         return TransitionResult.APPLIED;
     }
 
-    public void resolveReview(PaymentStatus outcome, String actor, String reason, Clock clock) {
+    public void resolveReview(PaymentStatus outcome, Actor admin, String reason, Clock clock) {
         if (status != PaymentStatus.REQUIRES_REVIEW || !status.canMoveTo(outcome)) {
             throw new InvalidTransitionException(status, outcome);
         }
         var now = clock.instant();
-        record(status, outcome, TransitionTrigger.ADMIN, now, actor, reason);
+        record(status, outcome, TransitionCause.by(admin, TransitionTrigger.ADMIN), now, reason);
         status = outcome;
         updatedAt = now;
     }
@@ -190,9 +190,9 @@ public class Payment {
         pendingTransitions.clear();
     }
 
-    private void apply(PaymentStatus next, TransitionTrigger trigger, Clock clock) {
+    private void apply(PaymentStatus next, TransitionCause cause, Clock clock) {
         var now = clock.instant();
-        record(status, next, trigger, now, null, null);
+        record(status, next, cause, now, null);
         status = next;
         updatedAt = now;
     }
@@ -213,15 +213,17 @@ public class Payment {
         return text.length() > MAX_GATEWAY_RESPONSE ? text.substring(0, MAX_GATEWAY_RESPONSE) : text;
     }
 
-    private void record(@Nullable PaymentStatus from, PaymentStatus to, TransitionTrigger trigger, Instant at,
-                        @Nullable String actor, @Nullable String reason) {
+    private void record(@Nullable PaymentStatus from, PaymentStatus to, TransitionCause cause, Instant at,
+                        @Nullable String reason) {
+        var actor = cause.actor();
         pendingTransitions.add(PaymentTransitioned.builder()
                 .paymentId(id)
                 .from(from)
                 .to(to)
-                .trigger(trigger)
+                .trigger(cause.trigger())
                 .occurredAt(at)
-                .actor(actor)
+                .actor(actor == null ? null : actor.ownerId())
+                .actorKeyId(actor == null ? null : actor.keyId())
                 .reason(reason)
                 .build());
     }

@@ -16,6 +16,7 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import java.util.List;
 import java.util.UUID;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.security.ApiClient;
 import org.clement.acs_payment.security.Role;
 import org.junit.jupiter.api.Test;
@@ -66,7 +67,7 @@ class PaymentInitiationWireIT {
 
         mvc.perform(MockMvcRequestBuilders.post("/api/v1/payments/initiate")
                         .with(authentication(UsernamePasswordAuthenticationToken.authenticated(
-                                new ApiClient("client-a", Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")))))
+                                new ApiClient("client-a", TestActors.KEY_ID, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")))))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"reference":"%s","email":"jane@example.com","amount":150.00,"currency":"GHS"}

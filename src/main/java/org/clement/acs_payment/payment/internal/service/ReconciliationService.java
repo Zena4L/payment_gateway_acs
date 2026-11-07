@@ -10,6 +10,7 @@ import org.clement.acs_payment.payment.PaymentReconciliation;
 import org.clement.acs_payment.payment.ReconciliationReport;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
 import org.clement.acs_payment.payment.internal.model.TransitionTrigger;
 import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.PaystackGateway;
@@ -70,7 +71,7 @@ public class ReconciliationService implements PaymentReconciliation {
             case VerificationResult.NotFound() when before == PaymentStatus.INITIALIZING ->
                     updated = outcomes.failNeverInitialized(paymentId);
             case VerificationResult.Found(_), VerificationResult.NotFound() ->
-                    updated = OptimisticLocking.retryOnce(() -> outcomes.apply(paymentId, result, TransitionTrigger.RECONCILER));
+                    updated = OptimisticLocking.retryOnce(() -> outcomes.apply(paymentId, result, TransitionCause.system(TransitionTrigger.RECONCILER)));
         }
         if (isUnresolved(updated) && updated.getCreatedAt().isBefore(overdueBefore)) {
             outcomes.expire(paymentId);

@@ -44,7 +44,7 @@ public class PaymentInitiationService {
                 .amountMinor(created.getAmountMinor())
                 .currency(created.getCurrency().getCurrencyCode())
                 .build());
-        var updated = writer.applyInitialization(created.getId(), result);
+        var updated = writer.applyInitialization(created.getId(), result, command.initiator());
         return switch (result) {
             case InitializationResult.Rejected rejected when !rejected.alreadyKnownToProvider() ->
                     throw new ProviderRejectedException();

@@ -465,6 +465,19 @@ Work for the people who run the service, beyond the brief's tasks.
 - [x] `GET /api/v1/admin/payments/{transactionId}/transitions` returns every transition in order, with from, to, trigger, actor, reason and time.
 - [x] Only admin keys can read it; an unknown id returns `404`.
 
+### US-6.3: Know which key caused each change
+*Traces to: US-0.3 (transition history), US-0.4 (API keys)*
+
+**As an** operations admin, **I want** each status change to show which API key caused it, **so that** I can tell an admin's verify from the owner's, and trace changes made with a leaked key.
+
+**Acceptance criteria**
+- [x] Initiation transitions record the client's owner id and key id as the actor.
+- [x] A verify records the caller's owner id and key id, whether the caller is the owner or an admin.
+- [x] Admin resolutions record the admin's key id next to the owner id and reason.
+- [x] Webhook and reconciler transitions record no actor.
+- [x] The audit trail returns `actorKeyId`. The key id is the public half of the key. The secret is never stored or shown.
+- [x] The database refuses a key id without an actor.
+
 ---
 
 ## Traceability matrix
@@ -506,7 +519,7 @@ Work for the people who run the service, beyond the brief's tasks.
 | FR-4.6 | No secrets in responses | US-4.5 |
 | FR-5.1 | Reconcile stale payments | US-5.1, US-5.3 |
 | FR-5.2 | Expire unresolved payments | US-5.2 |
-| FR-5.3 | Status transition history | US-0.3 |
+| FR-5.3 | Status transition history | US-0.3, US-6.3 |
 | Brief §7 | Authenticate internal APIs | US-0.4 |
 | Brief §4, §7, §9 | Standardized, safe errors | US-0.5 |
 | Brief §9 | Correlation IDs, no PII in logs | US-0.6 |

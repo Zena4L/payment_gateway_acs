@@ -25,6 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.IntFunction;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.exception.DuplicatePaymentException;
 import org.clement.acs_payment.payment.internal.exception.PaymentConflictException;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -450,7 +451,7 @@ class DuplicatePaymentIT {
 
     private static UsernamePasswordAuthenticationToken asClient(String ownerId) {
         return UsernamePasswordAuthenticationToken.authenticated(
-                new ApiClient(ownerId, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
+                new ApiClient(ownerId, TestActors.KEY_ID, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
     }
 
     private static String body(String reference, String email, String amount) {
@@ -461,7 +462,7 @@ class DuplicatePaymentIT {
 
     private static InitiatePaymentCommand command(String ownerId, String reference, String email, String amount) {
         return InitiatePaymentCommand.builder()
-                .ownerId(ownerId)
+                .initiator(TestActors.of(ownerId))
                 .reference(reference)
                 .email(email)
                 .amount(new BigDecimal(amount))

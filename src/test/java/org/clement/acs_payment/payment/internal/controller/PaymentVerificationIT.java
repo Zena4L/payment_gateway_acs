@@ -23,6 +23,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -107,6 +109,10 @@ class PaymentVerificationIT {
         verifyAs("bootstrap-admin", Role.ADMIN, payment.getReference())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"));
+
+        assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(payment.getId())).last()
+                .extracting(PaymentTransition::getTriggeredBy, PaymentTransition::getActor, PaymentTransition::getActorKeyId)
+                .containsExactly(TransitionTrigger.VERIFY, "bootstrap-admin", TestActors.KEY_ID);
     }
 
     @Test
@@ -130,8 +136,9 @@ class PaymentVerificationIT {
         assertThat(saved.getGatewayResponse()).isEqualTo("Approved");
         assertThat(saved.getUpdatedAt()).isAfter(updatedBefore);
         assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(payment.getId())).last()
-                .extracting(PaymentTransition::getFromStatus, PaymentTransition::getToStatus, PaymentTransition::getTriggeredBy)
-                .containsExactly(PaymentStatus.PENDING, PaymentStatus.SUCCESS, TransitionTrigger.VERIFY);
+                .extracting(PaymentTransition::getFromStatus, PaymentTransition::getToStatus, PaymentTransition::getTriggeredBy,
+                        PaymentTransition::getActor, PaymentTransition::getActorKeyId)
+                .containsExactly(PaymentStatus.PENDING, PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, "client-a", TestActors.KEY_ID);
     }
 
     @ParameterizedTest
@@ -216,7 +223,7 @@ class PaymentVerificationIT {
     void ignoresProviderResultThatContradictsFinalState(CapturedOutput output) {
         var payment = paymentIn(PaymentStatus.SUCCESS, "client-a");
 
-        var applied = outcomes.apply(payment.getId(), found(transaction(payment, ProviderStatus.FAILED, "failed")), TransitionTrigger.VERIFY);
+        var applied = outcomes.apply(payment.getId(), found(transaction(payment, ProviderStatus.FAILED, "failed")), TransitionCause.system(TransitionTrigger.VERIFY));
 
         assertThat(applied.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(output.getAll()).contains("Rejected payment transition SUCCESS -> FAILED for reference " + payment.getReference());
@@ -226,7 +233,7 @@ class PaymentVerificationIT {
     void appliesConcurrentVerificationsExactlyOnce() throws Exception {
         var payment = paymentIn(PaymentStatus.PENDING, "client-a");
         providerReports(payment, ProviderStatus.SUCCESS);
-        var caller = new ApiClient("client-a", Role.CLIENT);
+        var caller = new ApiClient("client-a", TestActors.KEY_ID, Role.CLIENT);
 
         var start = new CountDownLatch(1);
         var futures = new ArrayList<Future<Payment>>();
@@ -319,7 +326,7 @@ class PaymentVerificationIT {
 
     private ResultActions verifyAs(String ownerId, Role role, String reference) throws Exception {
         var principal = UsernamePasswordAuthenticationToken.authenticated(
-                new ApiClient(ownerId, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
+                new ApiClient(ownerId, TestActors.KEY_ID, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
         return mvc.perform(get("/api/v1/payments/verify/{reference}", reference).with(authentication(principal)));
     }
 
@@ -347,24 +354,24 @@ class PaymentVerificationIT {
 
     private Payment paymentIn(PaymentStatus status, String ownerId) {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
-        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), ownerId, "jane@example.com", money, clock);
+        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), TestActors.of(ownerId), "jane@example.com", money, clock);
         switch (status) {
             case INITIALIZING -> {
             }
-            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", clock);
-            case UNKNOWN -> payment.markOutcomeUnknown(clock);
-            case FAILED -> payment.markFailed("Declined", TransitionTrigger.INITIATE, clock);
+            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+            case UNKNOWN -> payment.markOutcomeUnknown(TestActors.initiatorOf(payment), clock);
+            case FAILED -> payment.markFailed("Declined", TransitionCause.system(TransitionTrigger.INITIATE), clock);
             case SUCCESS -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", clock);
-                payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+                payment.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.VERIFY), clock);
             }
             case EXPIRED -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", clock);
-                payment.transitionTo(PaymentStatus.EXPIRED, TransitionTrigger.RECONCILER, clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+                payment.transitionTo(PaymentStatus.EXPIRED, TransitionCause.system(TransitionTrigger.RECONCILER), clock);
             }
             case REQUIRES_REVIEW -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", clock);
-                payment.flagForReview(TransitionTrigger.VERIFY, clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+                payment.flagForReview(TransitionCause.system(TransitionTrigger.VERIFY), clock);
             }
         }
         return payments.save(payment);

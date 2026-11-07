@@ -13,6 +13,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.SandboxKey;
 import org.clement.acs_payment.payment.PaymentReconciliation;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -122,6 +123,6 @@ class PaymentLifecycleSandboxE2E {
 
     private static RequestPostProcessor asClient() {
         return authentication(UsernamePasswordAuthenticationToken.authenticated(
-                new ApiClient("e2e-client", Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT"))));
+                new ApiClient("e2e-client", TestActors.KEY_ID, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT"))));
     }
 }

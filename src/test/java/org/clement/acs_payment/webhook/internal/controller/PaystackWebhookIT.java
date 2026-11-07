@@ -29,6 +29,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -433,24 +435,24 @@ class PaystackWebhookIT {
 
     private Payment pendingPayment() {
         var payment = newPayment();
-        payment.markInitialized("https://checkout.paystack.com/abc", clock);
+        payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
         return payments.save(payment);
     }
 
     private Payment paymentInFinalState(PaymentStatus status) {
         var payment = newPayment();
         if (status == PaymentStatus.FAILED) {
-            payment.markFailed("Declined", TransitionTrigger.INITIATE, clock);
+            payment.markFailed("Declined", TransitionCause.system(TransitionTrigger.INITIATE), clock);
         } else {
-            payment.markInitialized("https://checkout.paystack.com/abc", clock);
-            payment.transitionTo(status, TransitionTrigger.VERIFY, clock);
+            payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+            payment.transitionTo(status, TransitionCause.system(TransitionTrigger.VERIFY), clock);
         }
         return payments.save(payment);
     }
 
     private Payment newPayment() {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
-        return Payment.initialize("PAY-" + UUID.randomUUID(), "client-a", "jane@example.com", money, clock);
+        return Payment.initialize("PAY-" + UUID.randomUUID(), TestActors.of("client-a"), "jane@example.com", money, clock);
     }
 
     private static String chargeSuccess(String reference, long amountMinor, String currency) {
