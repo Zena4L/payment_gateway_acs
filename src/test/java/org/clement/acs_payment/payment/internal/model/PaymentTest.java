@@ -20,6 +20,7 @@ class PaymentTest {
     private static final Instant CREATED = Instant.parse("2026-11-06T10:00:00Z");
     private static final Clock CREATED_CLOCK = Clock.fixed(CREATED, ZoneOffset.UTC);
     private static final Clock LATER_CLOCK = Clock.offset(CREATED_CLOCK, Duration.ofMinutes(5));
+    private static final Actor ADMIN = new Actor("ops-admin", "0a0b0c0d0e0f");
 
     @Test
     void startsInitializingWithCreationRecordedInHistory() {
@@ -37,7 +38,7 @@ class PaymentTest {
     void appliesAllowedTransitionAndRecordsIt() {
         var payment = newPayment();
 
-        var result = payment.transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, LATER_CLOCK);
+        var result = payment.transitionTo(PaymentStatus.PENDING, TransitionCause.system(TransitionTrigger.INITIATE), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.APPLIED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
@@ -51,7 +52,7 @@ class PaymentTest {
     void treatsSameStateAsNoOpWithoutHistory() {
         var payment = pendingPayment();
 
-        var result = payment.transitionTo(PaymentStatus.PENDING, TransitionTrigger.VERIFY, LATER_CLOCK);
+        var result = payment.transitionTo(PaymentStatus.PENDING, TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.NO_OP);
         assertThat(payment.pendingTransitions()).hasSize(2);
@@ -62,7 +63,7 @@ class PaymentTest {
         var payment = newPayment();
         var updatedAt = payment.getUpdatedAt();
 
-        var result = payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.WEBHOOK, LATER_CLOCK);
+        var result = payment.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.WEBHOOK), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.INITIALIZING);
@@ -74,9 +75,9 @@ class PaymentTest {
     @EnumSource(value = PaymentStatus.class, names = {"PENDING", "UNKNOWN", "REQUIRES_REVIEW", "EXPIRED"})
     void neverMovesASuccessfulPayment(PaymentStatus next) {
         var payment = pendingPayment();
-        payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
-        var result = payment.transitionTo(next, TransitionTrigger.WEBHOOK, LATER_CLOCK);
+        var result = payment.transitionTo(next, TransitionCause.system(TransitionTrigger.WEBHOOK), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
@@ -85,9 +86,9 @@ class PaymentTest {
     @Test
     void lateFailureCannotUndoSuccess() {
         var payment = pendingPayment();
-        payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
-        var result = payment.transitionTo(PaymentStatus.FAILED, TransitionTrigger.WEBHOOK, LATER_CLOCK);
+        var result = payment.transitionTo(PaymentStatus.FAILED, TransitionCause.system(TransitionTrigger.WEBHOOK), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
@@ -98,7 +99,7 @@ class PaymentTest {
     void reviewNeverResolvesAutomatically(PaymentStatus outcome) {
         var payment = paymentInReview();
 
-        var result = payment.transitionTo(outcome, TransitionTrigger.VERIFY, LATER_CLOCK);
+        var result = payment.transitionTo(outcome, TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUIRES_REVIEW);
@@ -108,19 +109,19 @@ class PaymentTest {
     void resolvesReviewThroughExplicitAdminAction() {
         var payment = paymentInReview();
 
-        payment.resolveReview(PaymentStatus.SUCCESS, "ops-admin", "Customer bank confirmed the transfer", LATER_CLOCK);
+        payment.resolveReview(PaymentStatus.SUCCESS, ADMIN, "Customer bank confirmed the transfer", LATER_CLOCK);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(payment.pendingTransitions()).last()
-                .extracting(PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::reason)
-                .containsExactly(TransitionTrigger.ADMIN, "ops-admin", "Customer bank confirmed the transfer");
+                .extracting(PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::actorKeyId, PaymentTransitioned::reason)
+                .containsExactly(TransitionTrigger.ADMIN, "ops-admin", "0a0b0c0d0e0f", "Customer bank confirmed the transfer");
     }
 
     @Test
     void refusesReviewResolutionWhenNotInReview() {
         var payment = pendingPayment();
 
-        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.SUCCESS, "ops-admin", "reason", LATER_CLOCK))
+        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.SUCCESS, ADMIN, "reason", LATER_CLOCK))
                 .isInstanceOf(InvalidTransitionException.class);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
     }
@@ -129,16 +130,70 @@ class PaymentTest {
     void refusesReviewResolutionToNonFinalOutcome() {
         var payment = paymentInReview();
 
-        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.PENDING, "ops-admin", "reason", LATER_CLOCK))
+        assertThatThrownBy(() -> payment.resolveReview(PaymentStatus.PENDING, ADMIN, "reason", LATER_CLOCK))
                 .isInstanceOf(InvalidTransitionException.class);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUIRES_REVIEW);
+    }
+
+    @Test
+    void takesOwnerFromInitiatorAndRecordsInitiatorOnCreation() {
+        var payment = newPayment();
+
+        assertThat(payment.getOwnerId()).isEqualTo("client-a");
+        assertThat(payment.pendingTransitions())
+                .extracting(PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::actorKeyId)
+                .containsExactly(tuple(TransitionTrigger.INITIATE, "client-a", TestActors.KEY_ID));
+    }
+
+    @Test
+    void recordsInitiatorWhenInitialized() {
+        var payment = newPayment();
+
+        payment.markInitialized("https://checkout.paystack.com/abc", TestActors.of("client-a"), LATER_CLOCK);
+
+        assertThat(payment.pendingTransitions()).last()
+                .extracting(PaymentTransitioned::to, PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::actorKeyId)
+                .containsExactly(PaymentStatus.PENDING, TransitionTrigger.INITIATE, "client-a", TestActors.KEY_ID);
+    }
+
+    @Test
+    void recordsInitiatorWhenInitializationOutcomeIsUnknown() {
+        var payment = newPayment();
+
+        payment.markOutcomeUnknown(TestActors.of("client-a"), LATER_CLOCK);
+
+        assertThat(payment.pendingTransitions()).last()
+                .extracting(PaymentTransitioned::to, PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::actorKeyId)
+                .containsExactly(PaymentStatus.UNKNOWN, TransitionTrigger.INITIATE, "client-a", TestActors.KEY_ID);
+    }
+
+    @Test
+    void recordsWhoVerifiedAPayment() {
+        var payment = pendingPayment();
+
+        payment.markSucceeded(details(null), TransitionCause.by(ADMIN, TransitionTrigger.VERIFY), LATER_CLOCK);
+
+        assertThat(payment.pendingTransitions()).last()
+                .extracting(PaymentTransitioned::to, PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::actorKeyId)
+                .containsExactly(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, "ops-admin", "0a0b0c0d0e0f");
+    }
+
+    @Test
+    void recordsNoActorForSystemTransitions() {
+        var payment = pendingPayment();
+
+        payment.markFailed(details(null), TransitionCause.system(TransitionTrigger.WEBHOOK), LATER_CLOCK);
+
+        assertThat(payment.pendingTransitions()).last()
+                .extracting(PaymentTransitioned::trigger, PaymentTransitioned::actor, PaymentTransitioned::actorKeyId)
+                .containsExactly(TransitionTrigger.WEBHOOK, null, null);
     }
 
     @Test
     void storesEmailNormalised() {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
 
-        var payment = Payment.initialize("PAY-2", "client-a", "  Jane@Example.COM ", money, CREATED_CLOCK);
+        var payment = Payment.initialize("PAY-2", TestActors.of("client-a"), "  Jane@Example.COM ", money, CREATED_CLOCK);
 
         assertThat(payment.getEmail()).isEqualTo("jane@example.com");
     }
@@ -171,7 +226,7 @@ class PaymentTest {
     void storesCheckoutLinkWhenInitialized() {
         var payment = newPayment();
 
-        var result = payment.markInitialized("https://checkout.paystack.com/abc", LATER_CLOCK);
+        var result = payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.APPLIED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PENDING);
@@ -181,9 +236,9 @@ class PaymentTest {
     @Test
     void ignoresCheckoutDetailsWhenTransitionIsRejected() {
         var payment = pendingPayment();
-        payment.markFailed("declined", TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.markFailed("declined", TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
-        var result = payment.markInitialized("https://checkout.paystack.com/late", LATER_CLOCK);
+        var result = payment.markInitialized("https://checkout.paystack.com/late", TestActors.initiatorOf(payment), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getAuthorizationUrl()).isNull();
@@ -193,7 +248,7 @@ class PaymentTest {
     void recordsFailureReasonTruncated() {
         var payment = newPayment();
 
-        payment.markFailed("x".repeat(300), TransitionTrigger.INITIATE, LATER_CLOCK);
+        payment.markFailed("x".repeat(300), TransitionCause.system(TransitionTrigger.INITIATE), LATER_CLOCK);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
         assertThat(payment.getGatewayResponse()).hasSize(255);
@@ -203,7 +258,7 @@ class PaymentTest {
     void marksAmbiguousInitializationAsUnknown() {
         var payment = newPayment();
 
-        payment.markOutcomeUnknown(LATER_CLOCK);
+        payment.markOutcomeUnknown(TestActors.initiatorOf(payment), LATER_CLOCK);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.UNKNOWN);
     }
@@ -223,7 +278,7 @@ class PaymentTest {
         var payment = pendingPayment();
         var paidAt = Instant.parse("2026-11-06T10:15:30Z");
 
-        payment.markSucceeded(details(paidAt), TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.markSucceeded(details(paidAt), TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(payment.getProviderTransactionId()).isEqualTo(4099260516L);
@@ -237,7 +292,7 @@ class PaymentTest {
     void storesProviderDetailsWhenMarkedFailedByProvider() {
         var payment = pendingPayment();
 
-        payment.markFailed(details(null), TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.markFailed(details(null), TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
         assertThat(payment.getProviderTransactionId()).isEqualTo(4099260516L);
@@ -246,9 +301,9 @@ class PaymentTest {
     @Test
     void keepsExistingDetailsWhenProviderOutcomeIsRejected() {
         var payment = pendingPayment();
-        payment.markSucceeded(details(Instant.parse("2026-11-06T10:15:30Z")), TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.markSucceeded(details(Instant.parse("2026-11-06T10:15:30Z")), TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
-        var result = payment.markFailed(ProviderDetails.builder().transactionId(1).gatewayResponse("Declined").build(), TransitionTrigger.WEBHOOK, LATER_CLOCK);
+        var result = payment.markFailed(ProviderDetails.builder().transactionId(1).gatewayResponse("Declined").build(), TransitionCause.system(TransitionTrigger.WEBHOOK), LATER_CLOCK);
 
         assertThat(result).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
@@ -260,16 +315,16 @@ class PaymentTest {
     void flagsPendingPaymentForReview() {
         var payment = pendingPayment();
 
-        assertThat(payment.flagForReview(TransitionTrigger.VERIFY, LATER_CLOCK)).isEqualTo(TransitionResult.APPLIED);
+        assertThat(payment.flagForReview(TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK)).isEqualTo(TransitionResult.APPLIED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUIRES_REVIEW);
     }
 
     @Test
     void neverFlagsFinalPaymentForReview() {
         var payment = pendingPayment();
-        payment.markSucceeded(details(null), TransitionTrigger.VERIFY, LATER_CLOCK);
+        payment.markSucceeded(details(null), TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK);
 
-        assertThat(payment.flagForReview(TransitionTrigger.VERIFY, LATER_CLOCK)).isEqualTo(TransitionResult.REJECTED);
+        assertThat(payment.flagForReview(TransitionCause.system(TransitionTrigger.VERIFY), LATER_CLOCK)).isEqualTo(TransitionResult.REJECTED);
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
     }
 
@@ -301,23 +356,23 @@ class PaymentTest {
 
     private static Payment paymentFor(String reference, String ownerId, String email, String amount) {
         var money = new Money(new BigDecimal(amount), Currency.getInstance("GHS"));
-        return Payment.initialize(reference, ownerId, email, money, CREATED_CLOCK);
+        return Payment.initialize(reference, TestActors.of(ownerId), email, money, CREATED_CLOCK);
     }
 
     private static Payment newPayment() {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
-        return Payment.initialize("PAY-1", "client-a", "jane@example.com", money, CREATED_CLOCK);
+        return Payment.initialize("PAY-1", TestActors.of("client-a"), "jane@example.com", money, CREATED_CLOCK);
     }
 
     private static Payment pendingPayment() {
         var payment = newPayment();
-        payment.transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, CREATED_CLOCK);
+        payment.transitionTo(PaymentStatus.PENDING, TransitionCause.system(TransitionTrigger.INITIATE), CREATED_CLOCK);
         return payment;
     }
 
     private static Payment paymentInReview() {
         var payment = pendingPayment();
-        payment.transitionTo(PaymentStatus.REQUIRES_REVIEW, TransitionTrigger.VERIFY, CREATED_CLOCK);
+        payment.transitionTo(PaymentStatus.REQUIRES_REVIEW, TransitionCause.system(TransitionTrigger.VERIFY), CREATED_CLOCK);
         return payment;
     }
 }

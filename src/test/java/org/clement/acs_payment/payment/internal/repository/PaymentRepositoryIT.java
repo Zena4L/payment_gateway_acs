@@ -13,6 +13,8 @@ import java.util.Currency;
 import java.util.EnumSet;
 import java.util.UUID;
 import org.clement.acs_payment.TestcontainersConfiguration;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -95,9 +97,9 @@ class PaymentRepositoryIT {
         var first = payments.findById(saved.getId()).orElseThrow();
         var second = payments.findById(saved.getId()).orElseThrow();
 
-        first.transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, CLOCK);
+        first.transitionTo(PaymentStatus.PENDING, TransitionCause.system(TransitionTrigger.INITIATE), CLOCK);
         payments.saveAndFlush(first);
-        second.transitionTo(PaymentStatus.UNKNOWN, TransitionTrigger.INITIATE, CLOCK);
+        second.transitionTo(PaymentStatus.UNKNOWN, TransitionCause.system(TransitionTrigger.INITIATE), CLOCK);
 
         assertThatThrownBy(() -> payments.saveAndFlush(second))
                 .isInstanceOf(ObjectOptimisticLockingFailureException.class);
@@ -116,7 +118,7 @@ class PaymentRepositoryIT {
     void storesTransitionHistoryWithThePayment() {
         var saved = payments.save(newPayment(uniqueReference()));
         var loaded = payments.findById(saved.getId()).orElseThrow();
-        loaded.transitionTo(PaymentStatus.PENDING, TransitionTrigger.INITIATE, CLOCK);
+        loaded.transitionTo(PaymentStatus.PENDING, TransitionCause.system(TransitionTrigger.INITIATE), CLOCK);
         payments.saveAndFlush(loaded);
 
         var history = transitions.findByPaymentIdOrderByOccurredAtAsc(saved.getId());
@@ -132,7 +134,7 @@ class PaymentRepositoryIT {
     void writesNoHistoryForRejectedTransition() {
         var saved = payments.save(newPayment(uniqueReference()));
         var loaded = payments.findById(saved.getId()).orElseThrow();
-        loaded.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.WEBHOOK, CLOCK);
+        loaded.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.WEBHOOK), CLOCK);
         payments.saveAndFlush(loaded);
 
         assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(saved.getId())).hasSize(1);
@@ -163,6 +165,27 @@ class PaymentRepositoryIT {
                 """, UUID.randomUUID(), saved.getId()))
                 .isInstanceOf(DataIntegrityViolationException.class)
                 .hasMessageContaining("ck_transition_admin_details");
+    }
+
+    @Test
+    void refusesActorKeyIdWithoutActor() {
+        var saved = payments.save(newPayment(uniqueReference()));
+
+        assertThatThrownBy(() -> jdbc.update("""
+                insert into payment_transition (id, payment_id, from_status, to_status, triggered_by, occurred_at, actor_key_id)
+                values (?, ?, 'INITIALIZING', 'PENDING', 'INITIATE', now(), 'a1b2c3d4e5f6')
+                """, UUID.randomUUID(), saved.getId()))
+                .isInstanceOf(DataIntegrityViolationException.class)
+                .hasMessageContaining("ck_transition_actor_key_id");
+    }
+
+    @Test
+    void storesActorAndKeyIdOfTheInitiator() {
+        var saved = payments.saveAndFlush(newPayment(uniqueReference()));
+
+        assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(saved.getId()))
+                .extracting(PaymentTransition::getActor, PaymentTransition::getActorKeyId)
+                .containsExactly(tuple("client-a", TestActors.KEY_ID));
     }
 
     @Test
@@ -209,7 +232,7 @@ class PaymentRepositoryIT {
 
     private Payment seed(String ownerId, String email, String amount, Instant createdAt) {
         var money = new Money(new BigDecimal(amount), Currency.getInstance("GHS"));
-        return payments.saveAndFlush(Payment.initialize(uniqueReference(), ownerId, email, money, Clock.fixed(createdAt, ZoneOffset.UTC)));
+        return payments.saveAndFlush(Payment.initialize(uniqueReference(), TestActors.of(ownerId), email, money, Clock.fixed(createdAt, ZoneOffset.UTC)));
     }
 
     private void forceStatus(Payment payment, PaymentStatus status) {
@@ -219,7 +242,7 @@ class PaymentRepositoryIT {
 
     private static Payment newPayment(String reference) {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
-        return Payment.initialize(reference, "client-a", "jane@example.com", money, CLOCK);
+        return Payment.initialize(reference, TestActors.of("client-a"), "jane@example.com", money, CLOCK);
     }
 
     private static String uniqueReference() {

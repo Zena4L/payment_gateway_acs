@@ -19,6 +19,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -192,13 +194,17 @@ class PaymentReviewIT {
                 .andExpect(jsonPath("$.length()").value(4))
                 .andExpect(jsonPath("$[0].from").doesNotExist())
                 .andExpect(jsonPath("$[0].to").value("INITIALIZING"))
-                .andExpect(jsonPath("$[0].actor").doesNotExist())
+                .andExpect(jsonPath("$[0].actor").value("client-a"))
+                .andExpect(jsonPath("$[0].actorKeyId").value(TestActors.KEY_ID))
                 .andExpect(jsonPath("$[2].to").value("REQUIRES_REVIEW"))
                 .andExpect(jsonPath("$[2].trigger").value("VERIFY"))
+                .andExpect(jsonPath("$[2].actor").doesNotExist())
+                .andExpect(jsonPath("$[2].actorKeyId").doesNotExist())
                 .andExpect(jsonPath("$[3].from").value("REQUIRES_REVIEW"))
                 .andExpect(jsonPath("$[3].to").value("SUCCESS"))
                 .andExpect(jsonPath("$[3].trigger").value("ADMIN"))
                 .andExpect(jsonPath("$[3].actor").value(ADMIN))
+                .andExpect(jsonPath("$[3].actorKeyId").value(TestActors.KEY_ID))
                 .andExpect(jsonPath("$[3].reason").value(REASON));
     }
 
@@ -221,7 +227,7 @@ class PaymentReviewIT {
                 .reference(payment.getReference())
                 .amountMinor(payment.getAmountMinor())
                 .currency("GHS")
-                .build()), TransitionTrigger.WEBHOOK);
+                .build()), TransitionCause.system(TransitionTrigger.WEBHOOK));
 
         assertThat(applied.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
         assertThat(transitions.findByPaymentIdOrderByOccurredAtAsc(payment.getId()))
@@ -239,18 +245,18 @@ class PaymentReviewIT {
 
     private static UsernamePasswordAuthenticationToken principal(String ownerId, Role role) {
         return UsernamePasswordAuthenticationToken.authenticated(
-                new ApiClient(ownerId, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
+                new ApiClient(ownerId, TestActors.KEY_ID, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
     }
 
     private Payment paymentIn(PaymentStatus status) {
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
-        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), "client-a", "jane@example.com", money, clock);
-        payment.markInitialized("https://checkout.paystack.com/abc", clock);
+        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), TestActors.of("client-a"), "jane@example.com", money, clock);
+        payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
         switch (status) {
             case PENDING -> {
             }
-            case REQUIRES_REVIEW -> payment.flagForReview(TransitionTrigger.VERIFY, clock);
-            case SUCCESS -> payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, clock);
+            case REQUIRES_REVIEW -> payment.flagForReview(TransitionCause.system(TransitionTrigger.VERIFY), clock);
+            case SUCCESS -> payment.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.VERIFY), clock);
             default -> throw new IllegalArgumentException("Unsupported seed status " + status);
         }
         return payments.save(payment);

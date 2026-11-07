@@ -18,6 +18,7 @@ import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -59,8 +60,8 @@ class PaymentVerificationWireIT {
     @Test
     void verifiesPaymentThroughRealPaystackClient() throws Exception {
         var reference = "PAY-" + UUID.randomUUID();
-        var payment = Payment.initialize(reference, "client-a", "jane@example.com", new Money(new BigDecimal("150.00"), Currency.getInstance("GHS")), clock);
-        payment.markInitialized("https://checkout.paystack.com/abc", clock);
+        var payment = Payment.initialize(reference, TestActors.of("client-a"), "jane@example.com", new Money(new BigDecimal("150.00"), Currency.getInstance("GHS")), clock);
+        payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
         payments.save(payment);
         paystack.stubFor(get("/transaction/verify/" + reference).willReturn(aResponse()
                 .withStatus(200)
@@ -73,7 +74,7 @@ class PaymentVerificationWireIT {
 
         mvc.perform(MockMvcRequestBuilders.get("/api/v1/payments/verify/{reference}", reference)
                         .with(authentication(UsernamePasswordAuthenticationToken.authenticated(
-                                new ApiClient("client-a", Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT"))))))
+                                new ApiClient("client-a", TestActors.KEY_ID, Role.CLIENT), null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT"))))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.channel").value("mobile_money"));

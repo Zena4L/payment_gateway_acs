@@ -23,6 +23,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.PaymentReconciliation;
 import org.clement.acs_payment.payment.ReconciliationReport;
 import org.clement.acs_payment.payment.internal.model.Money;
@@ -302,20 +304,20 @@ class PaymentReconciliationIT {
     private Payment seed(PaymentStatus status, Instant at) {
         var clock = Clock.fixed(at, ZoneOffset.UTC);
         var money = new Money(new BigDecimal("150.00"), Currency.getInstance("GHS"));
-        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), "client-a", "jane@example.com", money, clock);
+        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), TestActors.of("client-a"), "jane@example.com", money, clock);
         switch (status) {
             case INITIALIZING -> {
             }
-            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", clock);
-            case UNKNOWN -> payment.markOutcomeUnknown(clock);
-            case FAILED -> payment.markFailed("Declined", TransitionTrigger.INITIATE, clock);
+            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+            case UNKNOWN -> payment.markOutcomeUnknown(TestActors.initiatorOf(payment), clock);
+            case FAILED -> payment.markFailed("Declined", TransitionCause.system(TransitionTrigger.INITIATE), clock);
             case SUCCESS -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", clock);
-                payment.transitionTo(PaymentStatus.SUCCESS, TransitionTrigger.VERIFY, clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+                payment.transitionTo(PaymentStatus.SUCCESS, TransitionCause.system(TransitionTrigger.VERIFY), clock);
             }
             case REQUIRES_REVIEW -> {
-                payment.markInitialized("https://checkout.paystack.com/abc", clock);
-                payment.flagForReview(TransitionTrigger.VERIFY, clock);
+                payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+                payment.flagForReview(TransitionCause.system(TransitionTrigger.VERIFY), clock);
             }
             case EXPIRED -> throw new IllegalArgumentException("Not seeded directly");
         }

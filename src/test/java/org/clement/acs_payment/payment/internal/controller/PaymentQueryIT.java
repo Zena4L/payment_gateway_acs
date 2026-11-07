@@ -19,6 +19,8 @@ import java.util.Currency;
 import java.util.List;
 import java.util.UUID;
 import org.clement.acs_payment.IntegrationTest;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
+import org.clement.acs_payment.payment.internal.model.TestActors;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
@@ -257,17 +259,17 @@ class PaymentQueryIT {
 
     private static UsernamePasswordAuthenticationToken principal(String ownerId, Role role) {
         return UsernamePasswordAuthenticationToken.authenticated(
-                new ApiClient(ownerId, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
+                new ApiClient(ownerId, TestActors.KEY_ID, role), null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
     }
 
     private Payment seed(String ownerId, String amount, PaymentStatus status, Instant createdAt) {
         var clock = Clock.fixed(createdAt, ZoneOffset.UTC);
         var money = new Money(new BigDecimal(amount), Currency.getInstance("GHS"));
-        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), ownerId, "jane@example.com", money, clock);
+        var payment = Payment.initialize("PAY-" + UUID.randomUUID(), TestActors.of(ownerId), "jane@example.com", money, clock);
         switch (status) {
-            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", clock);
-            case UNKNOWN -> payment.markOutcomeUnknown(clock);
-            case FAILED -> payment.markFailed("Declined by issuer", TransitionTrigger.INITIATE, clock);
+            case PENDING -> payment.markInitialized("https://checkout.paystack.com/abc", TestActors.initiatorOf(payment), clock);
+            case UNKNOWN -> payment.markOutcomeUnknown(TestActors.initiatorOf(payment), clock);
+            case FAILED -> payment.markFailed("Declined by issuer", TransitionCause.system(TransitionTrigger.INITIATE), clock);
             default -> throw new IllegalArgumentException("Unsupported seed status " + status);
         }
         return payments.save(payment);

@@ -8,9 +8,11 @@ import lombok.RequiredArgsConstructor;
 import org.clement.acs_payment.payment.internal.config.PaymentProperties;
 import org.clement.acs_payment.payment.internal.exception.DuplicatePaymentException;
 import org.clement.acs_payment.payment.internal.exception.PaymentNotFoundException;
+import org.clement.acs_payment.payment.internal.model.Actor;
 import org.clement.acs_payment.payment.internal.model.Money;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
 import org.clement.acs_payment.payment.internal.model.TransitionTrigger;
 import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.InitializationResult;
@@ -31,32 +33,33 @@ public class PaymentWriter {
 
     @Transactional
     public Payment create(InitiatePaymentCommand command, Money money) {
-        var payment = Payment.initialize(command.reference(), command.ownerId(), command.email(), money, clock);
+        var payment = Payment.initialize(command.reference(), command.initiator(), command.email(), money, clock);
         rejectLiveDuplicate(payment);
         return payments.saveAndFlush(payment);
     }
 
     @Transactional
-    public Payment resolveReview(UUID paymentId, ResolutionOutcome outcome, String actor, String reason) {
+    public Payment resolveReview(UUID paymentId, ResolutionOutcome outcome, Actor admin, String reason) {
         var payment = payments.findById(paymentId).orElseThrow(PaymentNotFoundException::new);
-        payment.resolveReview(outcome.getStatus(), actor, reason, clock);
+        payment.resolveReview(outcome.getStatus(), admin, reason, clock);
         return payments.save(payment);
     }
 
     @Transactional
-    public Payment applyInitialization(UUID paymentId, InitializationResult result) {
+    public Payment applyInitialization(UUID paymentId, InitializationResult result, Actor initiator) {
         var payment = payments.findById(paymentId).orElseThrow();
+        var cause = TransitionCause.by(initiator, TransitionTrigger.INITIATE);
         switch (result) {
             case InitializationResult.Initialized(var authorizationUrl) ->
-                    payment.markInitialized(authorizationUrl, clock);
+                    payment.markInitialized(authorizationUrl, initiator, clock);
             case InitializationResult.Rejected rejected when rejected.alreadyKnownToProvider() ->
-                    payment.markOutcomeUnknown(clock);
+                    payment.markOutcomeUnknown(initiator, clock);
             case InitializationResult.Rejected(_, var message) ->
-                    payment.markFailed(message, TransitionTrigger.INITIATE, clock);
+                    payment.markFailed(message, cause, clock);
             case InitializationResult.Unavailable() ->
-                    payment.markFailed(PROVIDER_UNAVAILABLE, TransitionTrigger.INITIATE, clock);
+                    payment.markFailed(PROVIDER_UNAVAILABLE, cause, clock);
             case InitializationResult.OutcomeUnknown() ->
-                    payment.markOutcomeUnknown(clock);
+                    payment.markOutcomeUnknown(initiator, clock);
         }
         return payments.save(payment);
     }

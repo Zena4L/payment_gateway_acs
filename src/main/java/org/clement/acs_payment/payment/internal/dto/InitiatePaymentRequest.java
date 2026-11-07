@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
+import org.clement.acs_payment.payment.internal.model.Actor;
 import org.clement.acs_payment.payment.internal.service.InitiatePaymentCommand;
 
 public record InitiatePaymentRequest(
@@ -22,9 +23,9 @@ public record InitiatePaymentRequest(
             + "dots (.), underscores (_) and hyphens (-); spaces and other characters are not allowed, for example use "
             + "'test-demo' instead of 'test demo'";
 
-    public InitiatePaymentCommand toCommand(String ownerId) {
+    public InitiatePaymentCommand toCommand(Actor initiator) {
         return InitiatePaymentCommand.builder()
-                .ownerId(ownerId)
+                .initiator(initiator)
                 .reference(reference)
                 .email(email)
                 .amount(amount)

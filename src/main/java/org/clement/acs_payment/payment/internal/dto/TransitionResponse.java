@@ -13,6 +13,7 @@ public record TransitionResponse(
         PaymentStatus to,
         TransitionTrigger trigger,
         @Nullable String actor,
+        @Nullable String actorKeyId,
         @Nullable String reason,
         Instant occurredAt) {
 
@@ -22,6 +23,7 @@ public record TransitionResponse(
                 .to(transition.getToStatus())
                 .trigger(transition.getTriggeredBy())
                 .actor(transition.getActor())
+                .actorKeyId(transition.getActorKeyId())
                 .reason(transition.getReason())
                 .occurredAt(transition.getOccurredAt())
                 .build();

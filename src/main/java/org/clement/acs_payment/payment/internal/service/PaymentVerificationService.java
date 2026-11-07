@@ -4,8 +4,10 @@ import lombok.RequiredArgsConstructor;
 import org.clement.acs_payment.payment.internal.exception.PaymentNotFoundException;
 import org.clement.acs_payment.payment.internal.exception.ProviderRejectedException;
 import org.clement.acs_payment.payment.internal.exception.ProviderUnavailableException;
+import org.clement.acs_payment.payment.internal.model.Actor;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
+import org.clement.acs_payment.payment.internal.model.TransitionCause;
 import org.clement.acs_payment.payment.internal.model.TransitionTrigger;
 import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
 import org.clement.acs_payment.paystack.PaystackGateway;
@@ -33,7 +35,11 @@ public class PaymentVerificationService {
             case VerificationResult.Unavailable() -> throw ProviderUnavailableException.duringVerification();
             case VerificationResult.Rejected(_) -> throw new ProviderRejectedException();
             case VerificationResult.Found(_), VerificationResult.NotFound() ->
-                    OptimisticLocking.retryOnce(() -> outcomes.apply(payment.getId(), result, TransitionTrigger.VERIFY));
+                    OptimisticLocking.retryOnce(() -> outcomes.apply(payment.getId(), result, verifiedBy(caller)));
         };
+    }
+
+    private static TransitionCause verifiedBy(ApiClient caller) {
+        return TransitionCause.by(new Actor(caller.ownerId(), caller.keyId()), TransitionTrigger.VERIFY);
     }
 }

@@ -5,6 +5,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.clement.acs_payment.payment.internal.exception.PaymentNotFoundException;
+import org.clement.acs_payment.payment.internal.model.Actor;
 import org.clement.acs_payment.payment.internal.model.Payment;
 import org.clement.acs_payment.payment.internal.model.PaymentTransition;
 import org.clement.acs_payment.payment.internal.repository.PaymentRepository;
@@ -23,7 +24,7 @@ public class PaymentReviewService {
     private final PaymentTransitionRepository transitions;
 
     public Payment resolve(UUID paymentId, ResolutionOutcome outcome, String reason, ApiClient admin) {
-        var resolved = OptimisticLocking.retryOnce(() -> writer.resolveReview(paymentId, outcome, admin.ownerId(), reason));
+        var resolved = OptimisticLocking.retryOnce(() -> writer.resolveReview(paymentId, outcome, new Actor(admin.ownerId(), admin.keyId()), reason));
         log.info("Payment {} review resolved to {} by {}", resolved.getReference(), outcome, admin.ownerId());
         return resolved;
     }

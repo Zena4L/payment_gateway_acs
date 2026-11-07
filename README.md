@@ -310,7 +310,7 @@ More detail on all of this is in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | `REQUIRES_REVIEW` | `SUCCESS`, `FAILED` (admin only, with a reason) |
 | `SUCCESS`, `FAILED`, `EXPIRED` | nothing |
 
-Every change is written to `payment_transition` (from, to, trigger, actor, reason, time) in the same transaction as the status change.
+Every change is written to `payment_transition` (from, to, trigger, actor, actor key id, reason, time) in the same transaction as the status change. Changes caused by an API call record the calling key's owner and key id. Webhook and reconciler changes record no actor.
 
 **Idempotency.**
 - **Initiation:** the client's `reference` is unique in the database. The same request again returns the existing payment (200). The same reference with different details returns 409. When requests race, the unique constraint lets exactly one through, and the others get the replay or conflict answer, never a 500.
@@ -390,7 +390,7 @@ src/main/java/org/clement/acs_payment/
   reconciliation/   scheduled job
   security/         API keys and roles
   shared/           correlation IDs, errors, clock, IDs
-src/main/resources/db/migration/   Flyway migrations V1 to V9
+src/main/resources/db/migration/   Flyway migrations V1 to V11
 src/test/java/                     unit (*Test), integration (*IT), sandbox (*E2E) tests
 postman/                           Postman collection and environment
 http/                              IntelliJ HTTP Client requests

@@ -41,6 +41,8 @@ public class PaymentTransition {
 
     private @Nullable String actor;
 
+    private @Nullable String actorKeyId;
+
     private @Nullable String reason;
 
     public static PaymentTransition from(PaymentTransitioned event) {
@@ -52,6 +54,7 @@ public class PaymentTransition {
                 .triggeredBy(event.trigger())
                 .occurredAt(event.occurredAt())
                 .actor(event.actor())
+                .actorKeyId(event.actorKeyId())
                 .reason(event.reason())
                 .build();
     }

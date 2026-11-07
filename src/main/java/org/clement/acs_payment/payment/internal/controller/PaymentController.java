@@ -10,6 +10,7 @@ import org.clement.acs_payment.payment.internal.dto.InitiatePaymentRequest;
 import org.clement.acs_payment.payment.internal.dto.PageResponse;
 import org.clement.acs_payment.payment.internal.dto.PaymentResponse;
 import org.clement.acs_payment.payment.internal.dto.TransactionResponse;
+import org.clement.acs_payment.payment.internal.model.Actor;
 import org.clement.acs_payment.payment.internal.model.PaymentStatus;
 import org.clement.acs_payment.payment.internal.service.PaymentInitiation;
 import org.clement.acs_payment.payment.internal.service.PaymentInitiationService;
@@ -44,7 +45,7 @@ class PaymentController {
     @PostMapping("/initiate")
     ResponseEntity<PaymentResponse> initiate(@Valid @RequestBody InitiatePaymentRequest request,
                                              @AuthenticationPrincipal ApiClient client) {
-        var result = initiation.initiate(request.toCommand(client.ownerId()));
+        var result = initiation.initiate(request.toCommand(new Actor(client.ownerId(), client.keyId())));
         return ResponseEntity.status(statusFor(result)).body(PaymentResponse.from(result.payment()));
     }
 

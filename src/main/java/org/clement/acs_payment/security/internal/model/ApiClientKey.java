@@ -70,7 +70,7 @@ public class ApiClientKey {
     }
 
     public ApiClient toClient() {
-        return new ApiClient(ownerId, role);
+        return new ApiClient(ownerId, keyId, role);
     }
 
     public static boolean hashesEqual(String expected, String actual) {
